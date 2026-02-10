@@ -750,6 +750,7 @@
                 align-items: stretch;
             }
             .tabs {
+                order: 1;
                 width: 100%;
                 max-width: 100%;
                 box-sizing: border-box;
@@ -764,6 +765,7 @@
                 scroll-snap-align: start;
             }
             .toolbar-actions {
+                order: 0;
                 width: 100%;
                 justify-content: space-between;
             }
@@ -778,9 +780,14 @@
                 letter-spacing: 0.14em;
             }
             .location input {
+                /* iOS Safari auto-zooms form controls when font-size < 16px */
+                font-size: 16px;
                 flex: 1 1 100%;
                 min-width: 0;
                 width: 100%;
+            }
+            .inline-select {
+                font-size: 16px;
             }
             .location .mini-btn {
                 padding: 8px 12px;
