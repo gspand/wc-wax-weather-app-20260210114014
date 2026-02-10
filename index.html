@@ -1643,6 +1643,49 @@ const appendSiteSuggestions = (items, query, maxItems = 8) => {
         items.push(item);
     });
 };
+const simplifyLocationQuery = (query) => {
+    const raw = String(query || "").trim();
+    if (!raw) return "";
+    // Allow users to paste labels like "Name | Region | CC" or "Aktueller Standort · Name".
+    let out = raw;
+    if (out.includes("|")) out = out.split("|")[0].trim();
+    if (out.includes("·")) out = out.split("·")[0].trim();
+    return out;
+};
+const findSiteByQuery = (query) => {
+    const raw = String(query || "").trim();
+    const q = normalizeSiteName(raw);
+    if (!q) return null;
+
+    if (q.startsWith("aktueller standort")) {
+        const current = sitesByName[currentSiteName];
+        if (current) return current;
+        const anyDevice = siteMeta.find((s) => normalizeSiteName(s?.name).startsWith("aktueller standort"));
+        if (anyDevice) return anyDevice;
+    }
+
+    const exact = siteMeta.find((site) => {
+        if (!site) return false;
+        if (normalizeSiteName(site.name) === q) return true;
+        const aliases = Array.isArray(site.aliases) ? site.aliases : [];
+        return aliases.some((a) => normalizeSiteName(a) === q);
+    });
+    if (exact) return exact;
+
+    const simplified = simplifyLocationQuery(raw);
+    const qs = normalizeSiteName(simplified);
+    if (qs && qs !== q) {
+        const simplifiedMatch = siteMeta.find((site) => {
+            if (!site) return false;
+            if (normalizeSiteName(site.name) === qs) return true;
+            const aliases = Array.isArray(site.aliases) ? site.aliases : [];
+            return aliases.some((a) => normalizeSiteName(a) === qs);
+        });
+        if (simplifiedMatch) return simplifiedMatch;
+    }
+
+    return null;
+};
 const hideLocationSuggest = () => {
     locationSuggestItems = [];
     locationSuggestFocus = -1;
@@ -1762,6 +1805,18 @@ const resolveCustomLocation = async () => {
         if (statusBox && currentPayload) updateStatus(currentPayload);
         return;
     }
+
+    // If the query already matches a known location, avoid a geocoding round-trip.
+    const known = findSiteByQuery(query);
+    if (known) {
+        currentSiteName = known.name;
+        if (customLocationInput) customLocationInput.value = known.name;
+        locationInputPrefilled = true;
+        hideLocationSuggest();
+        updateSite(known.name);
+        return;
+    }
+
     const prevStatusText = statusBox ? statusBox.textContent : "";
     if (statusBox) statusBox.textContent = "Suche Ort...";
     if (locationSuggestItems.length) {
