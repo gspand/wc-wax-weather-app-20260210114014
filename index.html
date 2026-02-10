@@ -2355,7 +2355,9 @@ let locationSuggestItems = [];
 let locationSuggestFocus = -1;
 let locationSuggestReqId = 0;
 let locationSuggestDebounce = null;
-const AUTO_REFRESH_INTERVAL_MS = 60 * 1000;
+// Don't refresh the whole dashboard every minute (rate limits + flicker).
+// Instead, poll a lightweight "dataset stamp" and only reload when new data exists.
+const DATASET_POLL_INTERVAL_MS = 5 * 60 * 1000;
 let autoRefreshTimer = null;
 let activeSiteRequests = 0;
 
@@ -2793,6 +2795,79 @@ const fetchText = async (url, timeoutMs) => {
     return res.text();
 };
 const buildUrl = (base, params) => `${base}?${new URLSearchParams(params).toString()}`;
+
+const DATASET_STAMP_KEY_PREFIX = "alpenwetter_dataset_stamp_v1";
+const datasetStampStorageKey = (site) => {
+    if (!site) return `${DATASET_STAMP_KEY_PREFIX}:unknown`;
+    return `${DATASET_STAMP_KEY_PREFIX}:${site.lat.toFixed(3)}:${site.lon.toFixed(3)}`;
+};
+const getStoredDatasetStamp = (site) => {
+    try {
+        return localStorage.getItem(datasetStampStorageKey(site)) || null;
+    } catch (err) {
+        return null;
+    }
+};
+const setStoredDatasetStamp = (site, stamp) => {
+    try {
+        localStorage.setItem(datasetStampStorageKey(site), stamp);
+    } catch (err) {
+        // ignore
+    }
+};
+const csvFirstTimeIso = (raw) => {
+    if (!raw) return null;
+    const lines = String(raw).split(/\r?\n/);
+    // line 0 = header
+    for (let i = 1; i < lines.length; i += 1) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        const idx = line.indexOf(",");
+        if (idx <= 0) continue;
+        return line.slice(0, idx);
+    }
+    return null;
+};
+const fetchTimeseriesStamp = async (endpoint, site, parameter) => {
+    const query = {
+        lat_lon: `${site.lat},${site.lon}`,
+        parameters: parameter,
+        output_format: "csv",
+        forecast_offset: 0,
+    };
+    const url = buildUrl(endpoint, query);
+    const raw = await fetchText(url, 12000);
+    const firstIso = csvFirstTimeIso(raw);
+    if (!firstIso) throw new Error("Stamp parse failed");
+    return firstIso;
+};
+const pickStampSourcesForSite = (site) => {
+    const sources = [
+        { kind: "inca", endpoint: GEO_TS_NOWCAST, parameter: "t2m" },
+        { kind: "nwp", endpoint: GEO_TS_NWP, parameter: "t2m" },
+        { kind: "ens", endpoint: GEO_TS_ENSEMBLE, parameter: "t2m_p50" },
+    ];
+    const payload = currentPayload;
+    if (payload && payload.site && payload.site.name === site?.name && payload.missing) {
+        if (payload.missing.nowcast === false) return [sources[0], sources[1], sources[2]];
+        if (payload.missing.nwp === false) return [sources[1], sources[0], sources[2]];
+        if (payload.missing.ensemble === false) return [sources[2], sources[1], sources[0]];
+    }
+    return sources;
+};
+const fetchRemoteDatasetStamp = async (site) => {
+    if (!site) return null;
+    const sources = pickStampSourcesForSite(site);
+    for (const src of sources) {
+        try {
+            const iso = await fetchTimeseriesStamp(src.endpoint, site, src.parameter);
+            if (iso) return `${src.kind}:${iso}`;
+        } catch (err) {
+            // try next source
+        }
+    }
+    return null;
+};
 
 const parseCsv = (raw) => {
     if (!raw) return [];
@@ -6454,9 +6529,9 @@ function updateSiteView(payload) {
 }
 
 let siteRequestId = 0;
-async function updateSite(siteName) {
+async function updateSite(siteName, options = {}) {
     const site = sitesByName[siteName] || siteMeta[0];
-    if (!site) return;
+    if (!site) return false;
     currentSiteName = site.name;
     // dropdown removed
     populateAvalancheRegionSelect();
@@ -6469,7 +6544,7 @@ async function updateSite(siteName) {
     activeSiteRequests += 1;
     try {
         const payload = await ensureSite(site);
-        if (reqId !== siteRequestId) return;
+        if (reqId !== siteRequestId) return false;
         currentPayload = payload;
         updateSiteView(payload);
         updateStatus(payload);
@@ -6478,8 +6553,24 @@ async function updateSite(siteName) {
             mapInstance.setView([site.lat, site.lon], Math.max(mapInstance.getZoom() || 9, 8));
             setTimeout(() => mapInstance.invalidateSize(true), 200);
         }
+
+        // Keep a stored dataset stamp so we can later refresh only when new data is available.
+        if (options && options.datasetStamp) {
+            setStoredDatasetStamp(site, options.datasetStamp);
+        } else {
+            // Fire-and-forget (avoid blocking UI). If it fails we simply won't have a stamp.
+            fetchRemoteDatasetStamp(site)
+                .then((stamp) => {
+                    if (stamp) setStoredDatasetStamp(site, stamp);
+                })
+                .catch(() => {
+                    // ignore
+                });
+        }
+
+        return true;
     } catch (err) {
-        if (reqId !== siteRequestId) return;
+        if (reqId !== siteRequestId) return false;
         if (statusBox && currentPayload?.series?.source) {
             statusBox.textContent = `Modell: ${currentPayload.series.source}`;
         }
@@ -6487,18 +6578,45 @@ async function updateSite(siteName) {
             alertBox.textContent = "";
             alertBox.style.display = "none";
         }
+        return false;
     } finally {
         activeSiteRequests = Math.max(0, activeSiteRequests - 1);
+    }
+}
+
+let datasetPollInFlight = false;
+async function refreshIfNewDataset() {
+    if (datasetPollInFlight) return;
+    datasetPollInFlight = true;
+    try {
+        if (document.hidden) return;
+        if (activeSiteRequests > 0) return;
+        const site = sitesByName[currentSiteName] || siteMeta[0];
+        if (!site) return;
+
+        const remoteStamp = await fetchRemoteDatasetStamp(site);
+        if (!remoteStamp) return;
+
+        const stored = getStoredDatasetStamp(site);
+        if (!stored && currentPayload?.site?.name === site.name) {
+            // We already have data; just prime the stamp to avoid an unnecessary reload.
+            setStoredDatasetStamp(site, remoteStamp);
+            return;
+        }
+        if (stored && stored === remoteStamp) return;
+
+        // New dataset available -> reload the site.
+        await updateSite(site.name, { datasetStamp: remoteStamp });
+    } finally {
+        datasetPollInFlight = false;
     }
 }
 
 function startAutoRefresh() {
     if (autoRefreshTimer) clearInterval(autoRefreshTimer);
     autoRefreshTimer = setInterval(() => {
-        if (document.hidden) return;
-        if (activeSiteRequests > 0) return;
-        updateSite(currentSiteName);
-    }, AUTO_REFRESH_INTERVAL_MS);
+        refreshIfNewDataset();
+    }, DATASET_POLL_INTERVAL_MS);
 }
 
 function scheduleThermikMatrixRender(delayMs = 0) {
@@ -6811,6 +6929,11 @@ window.addEventListener("orientationchange", () => {
 if (window.visualViewport) {
     window.visualViewport.addEventListener("resize", () => scheduleViewportReflow(60));
 }
+document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) {
+        refreshIfNewDataset();
+    }
+});
 
 showPage("overview");
 renderPinnedSites();
