@@ -637,6 +637,15 @@
             border: 1px solid rgba(148, 163, 184, 0.14);
             background: rgba(10, 18, 32, 0.55);
         }
+        /* iOS Safari/PWA sometimes keeps Chart.js inline canvas widths after rotation.
+           Force canvases to respect their container so charts never overflow the card. */
+        .chart-card .chart-wrap {
+            overflow: hidden;
+        }
+        .chart-card canvas {
+            width: 100% !important;
+            height: 100% !important;
+        }
         .chart-grid {
             display: grid;
             gap: 12px;
@@ -6379,6 +6388,7 @@ function resizeVisibleCharts() {
         if (!chart || typeof chart.resize !== "function") return;
         try {
             chart.resize();
+            if (typeof chart.update === "function") chart.update("none");
         } catch {
             // ignore
         }
@@ -6409,6 +6419,13 @@ function scheduleViewportReflow(delayMs = 0) {
                 scheduleThermikMatrixRender();
                 if (mapInstance) mapInstance.invalidateSize(true);
             }, 260);
+
+            // Some iOS devices settle late (URL bar / safe areas). Run one more pass.
+            setTimeout(() => {
+                resizeVisibleCharts();
+                scheduleThermikMatrixRender();
+                if (mapInstance) mapInstance.invalidateSize(true);
+            }, 900);
         });
     };
 
