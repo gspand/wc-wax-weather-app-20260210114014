@@ -1925,7 +1925,7 @@ const haversineKm = (lat1, lon1, lat2, lon2) => {
         + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
     return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 };
-const findNearestKnownSiteName = (lat, lon, maxKm = 60) => {
+const findNearestKnownSite = (lat, lon, maxKm = 80) => {
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
     let best = null;
     let bestKm = Infinity;
@@ -1942,7 +1942,7 @@ const findNearestKnownSiteName = (lat, lon, maxKm = 60) => {
         }
     });
     if (!best || !(bestKm <= maxKm)) return null;
-    return best;
+    return { name: best, km: Math.round(bestKm) };
 };
 
 let locationInputPrefilled = false;
@@ -1969,9 +1969,14 @@ const tryLoadDeviceLocationFirst = async () => {
         if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
 
         const elev = await fetchElevationM(lat, lon);
-        const near = findNearestKnownSiteName(lat, lon);
-        const hint = near ? ` · ${near}` : ` · ${lat.toFixed(3)}, ${lon.toFixed(3)}`;
-        const site = makeCustomSite(`Aktueller Standort${hint}`, lat, lon, elev);
+        const coords = `${lat.toFixed(3)}, ${lon.toFixed(3)}`;
+        const near = findNearestKnownSite(lat, lon);
+        const hintParts = [];
+        if (near && near.name) hintParts.push(`${near.name} (${near.km} km)`);
+        hintParts.push(coords);
+        const site = makeCustomSite("Aktueller Standort", lat, lon, elev);
+        site.is_device_location = true;
+        site.device_hint = hintParts.join(" | ");
         upsertCustomSite(site);
         currentSiteName = site.name;
         if (customLocationInput) customLocationInput.value = site.name;
@@ -4202,7 +4207,15 @@ function updateHero(payload) {
     const labelsIso = series.labels_iso || series.labels;
     const idx = pickCurrentIndex(labelsIso);
 
-    if (heroTitle) heroTitle.textContent = site.name || "Wetterkarte";
+    if (heroTitle) {
+        const name = site.name || "Wetterkarte";
+        const hint = site?.device_hint;
+        if (hint && normalizeSiteName(name).startsWith("aktueller standort")) {
+            heroTitle.textContent = `${name} (${hint})`;
+        } else {
+            heroTitle.textContent = name;
+        }
+    }
     if (heroSubtitle) {
         const coords = `${site.lat.toFixed(4)}, ${site.lon.toFixed(4)} | Höhe ${Math.round(site.elevation_m)} m`;
         const windowText = window ? `${window.start} bis ${window.end} (${window.tz || "lokal"})` : "";
@@ -6656,22 +6669,46 @@ if (customLocationInput) {
             fetchLocationSuggest(query);
         }, 220);
     });
+
+    const clearPrefilledLocation = () => {
+        if (!locationInputPrefilled) return false;
+        if (!customLocationInput.value.trim()) {
+            locationInputPrefilled = false;
+            return false;
+        }
+        customLocationInput.value = "";
+        locationInputPrefilled = false;
+        hideLocationSuggest();
+        if (statusBox && currentPayload) updateStatus(currentPayload);
+        return true;
+    };
+    // On iOS, users may tap into an already-focused input; use click as well as focus.
+    customLocationInput.addEventListener("click", () => {
+        clearPrefilledLocation();
+    });
     customLocationInput.addEventListener("focus", () => {
         if (alertBox) {
             alertBox.textContent = "";
             alertBox.style.display = "none";
         }
-        if (locationInputPrefilled && customLocationInput.value.trim()) {
-            customLocationInput.value = "";
-            locationInputPrefilled = false;
-            hideLocationSuggest();
-            if (statusBox && currentPayload) updateStatus(currentPayload);
-            return;
-        }
+        if (clearPrefilledLocation()) return;
         const query = customLocationInput.value.trim();
         if (query) fetchLocationSuggest(query);
     });
     customLocationInput.addEventListener("keydown", (event) => {
+        // If the field was auto-filled (e.g. device location), typing should replace it.
+        if (
+            locationInputPrefilled &&
+            typeof event.key === "string" &&
+            event.key.length === 1 &&
+            !event.ctrlKey &&
+            !event.metaKey &&
+            !event.altKey
+        ) {
+            customLocationInput.value = "";
+            locationInputPrefilled = false;
+            hideLocationSuggest();
+        }
         if (event.key === "ArrowDown") {
             event.preventDefault();
             if (!locationSuggestItems.length) {
