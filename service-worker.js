@@ -50,6 +50,24 @@ const cacheFirst = async (request, cacheName) => {
     return response;
 };
 
+const staleWhileRevalidate = async (request, cacheName) => {
+    const cache = await caches.open(cacheName);
+    const cached = await cache.match(request, { ignoreSearch: true });
+
+    const fetchPromise = fetch(request)
+        .then((response) => {
+            if (response && (response.ok || response.type === "opaque")) {
+                cache.put(request, response.clone());
+            }
+            return response;
+        })
+        .catch(() => null);
+
+    if (cached) return cached;
+    const response = await fetchPromise;
+    return response || cached;
+};
+
 const networkFirst = async (request, cacheName) => {
     const cache = await caches.open(cacheName);
     try {
@@ -102,13 +120,13 @@ self.addEventListener("fetch", (event) => {
 
     // Navigations: serve app shell for fast startups (and offline).
     if (request.mode === "navigate") {
-        event.respondWith(cacheFirst("./index.html", CACHE_NAME));
+        event.respondWith(staleWhileRevalidate("./index.html", CACHE_NAME));
         return;
     }
 
     // App shell assets: cache-first.
     if (isAppShellRequest(url)) {
-        event.respondWith(cacheFirst(request, CACHE_NAME));
+        event.respondWith(staleWhileRevalidate(request, CACHE_NAME));
         return;
     }
 
