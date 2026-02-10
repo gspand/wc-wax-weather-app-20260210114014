@@ -1733,7 +1733,16 @@ const fetchLocationSuggest = async (query) => {
 const resolveCustomLocation = async () => {
     if (!customLocationInput) return;
     const query = customLocationInput.value.trim();
-    if (!query) return;
+    // Clear any previous error while a new search is being attempted.
+    if (alertBox) {
+        alertBox.textContent = "";
+        alertBox.style.display = "none";
+    }
+    if (!query) {
+        if (statusBox && currentPayload) updateStatus(currentPayload);
+        return;
+    }
+    const prevStatusText = statusBox ? statusBox.textContent : "";
     if (statusBox) statusBox.textContent = "Suche Ort...";
     if (locationSuggestItems.length) {
         const selectedIdx = locationSuggestFocus >= 0 ? locationSuggestFocus : 0;
@@ -1763,6 +1772,10 @@ const resolveCustomLocation = async () => {
         hideLocationSuggest();
         updateSite(site.name);
     } catch (err) {
+        if (statusBox) {
+            if (currentPayload) updateStatus(currentPayload);
+            else if (prevStatusText) statusBox.textContent = prevStatusText;
+        }
         if (alertBox) {
             alertBox.textContent = `Ortssuche fehlgeschlagen: ${err.message}`;
             alertBox.style.display = "block";
@@ -6392,11 +6405,16 @@ if (customLocationBtn) {
 }
 if (customLocationInput) {
     customLocationInput.addEventListener("input", () => {
+        if (alertBox) {
+            alertBox.textContent = "";
+            alertBox.style.display = "none";
+        }
         const query = customLocationInput.value.trim();
         if (locationSuggestDebounce) clearTimeout(locationSuggestDebounce);
         locationSuggestReqId += 1;
         if (!query) {
             hideLocationSuggest();
+            if (statusBox && currentPayload) updateStatus(currentPayload);
             return;
         }
         hideLocationSuggest();
@@ -6405,6 +6423,10 @@ if (customLocationInput) {
         }, 220);
     });
     customLocationInput.addEventListener("focus", () => {
+        if (alertBox) {
+            alertBox.textContent = "";
+            alertBox.style.display = "none";
+        }
         const query = customLocationInput.value.trim();
         if (query) fetchLocationSuggest(query);
     });
