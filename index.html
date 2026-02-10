@@ -6367,6 +6367,55 @@ function scheduleThermikMatrixRender(delayMs = 0) {
     }
 }
 
+function resizeVisibleCharts() {
+    if (!chartAvailable || typeof Chart === "undefined") return;
+    if (typeof Chart.getChart !== "function") return;
+    const activePage = document.querySelector(".page.active") || document.body;
+    const canvases = Array.from(activePage.querySelectorAll("canvas"));
+    canvases.forEach((canvas) => {
+        const rect = canvas.getBoundingClientRect();
+        if (!rect || rect.width < 32 || rect.height < 32) return;
+        const chart = Chart.getChart(canvas);
+        if (!chart || typeof chart.resize !== "function") return;
+        try {
+            chart.resize();
+        } catch {
+            // ignore
+        }
+    });
+}
+
+let viewportReflowTimer = null;
+let viewportReflowRaf = null;
+function scheduleViewportReflow(delayMs = 0) {
+    if (viewportReflowTimer) {
+        clearTimeout(viewportReflowTimer);
+        viewportReflowTimer = null;
+    }
+    if (viewportReflowRaf !== null) {
+        cancelAnimationFrame(viewportReflowRaf);
+        viewportReflowRaf = null;
+    }
+
+    const run = () => {
+        viewportReflowRaf = requestAnimationFrame(() => {
+            viewportReflowRaf = null;
+            resizeVisibleCharts();
+            scheduleThermikMatrixRender();
+
+            // iOS Safari/PWA: layout settles slightly after rotation. Run a second pass.
+            setTimeout(() => {
+                resizeVisibleCharts();
+                scheduleThermikMatrixRender();
+                if (mapInstance) mapInstance.invalidateSize(true);
+            }, 260);
+        });
+    };
+
+    if (delayMs > 0) viewportReflowTimer = setTimeout(run, delayMs);
+    else run();
+}
+
 function showPage(target) {
     if (pageOverview) pageOverview.classList.toggle("active", target === "overview");
     if (pageParagliding) pageParagliding.classList.toggle("active", target === "paragliding");
@@ -6399,6 +6448,8 @@ function showPage(target) {
         scheduleThermikMatrixRender();
         scheduleThermikMatrixRender(260);
     }
+
+    scheduleViewportReflow(80);
 }
 window.showPage = showPage;
 
@@ -6553,8 +6604,14 @@ if (tourAltChecks && tourAltChecks.length) {
     });
 }
 window.addEventListener("resize", () => {
-    scheduleThermikMatrixRender();
+    scheduleViewportReflow();
 });
+window.addEventListener("orientationchange", () => {
+    scheduleViewportReflow(80);
+});
+if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", () => scheduleViewportReflow(60));
+}
 
 showPage("overview");
 updateSite(currentSiteName);
