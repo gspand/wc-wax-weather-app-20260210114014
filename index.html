@@ -1666,6 +1666,7 @@ const applyLocationSuggestion = async (item) => {
     if (item.kind === "site" && item.siteName && sitesByName[item.siteName]) {
         currentSiteName = item.siteName;
         if (customLocationInput) customLocationInput.value = item.siteName;
+        locationInputPrefilled = true;
         hideLocationSuggest();
         updateSite(item.siteName);
         return;
@@ -1675,6 +1676,7 @@ const applyLocationSuggestion = async (item) => {
     upsertCustomSite(site);
     currentSiteName = site.name;
     if (customLocationInput) customLocationInput.value = item.label;
+    locationInputPrefilled = true;
     hideLocationSuggest();
     updateSite(site.name);
 };
@@ -1773,6 +1775,8 @@ const resolveCustomLocation = async () => {
         const site = makeCustomSite(name, latlon.lat, latlon.lon);
         upsertCustomSite(site);
         currentSiteName = site.name;
+        if (customLocationInput) customLocationInput.value = name;
+        locationInputPrefilled = true;
         hideLocationSuggest();
         updateSite(site.name);
         return;
@@ -1787,6 +1791,8 @@ const resolveCustomLocation = async () => {
         const site = makeCustomSite(siteName, best.latitude, best.longitude, best.elevation);
         upsertCustomSite(site);
         currentSiteName = site.name;
+        if (customLocationInput) customLocationInput.value = label;
+        locationInputPrefilled = true;
         hideLocationSuggest();
         updateSite(site.name);
     } catch (err) {
@@ -1854,6 +1860,37 @@ const fetchElevationM = async (lat, lon) => {
     }
 };
 
+const toRad = (deg) => (deg * Math.PI) / 180;
+const haversineKm = (lat1, lon1, lat2, lon2) => {
+    const R = 6371;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2)
+        + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
+const findNearestKnownSiteName = (lat, lon, maxKm = 60) => {
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    let best = null;
+    let bestKm = Infinity;
+    siteMeta.forEach((site) => {
+        if (!site || !Number.isFinite(site.lat) || !Number.isFinite(site.lon)) return;
+        const name = String(site.name || "").trim();
+        if (!name) return;
+        if (name.toLowerCase().startsWith("aktueller standort")) return;
+        const d = haversineKm(lat, lon, site.lat, site.lon);
+        if (!Number.isFinite(d)) return;
+        if (d < bestKm) {
+            bestKm = d;
+            best = name;
+        }
+    });
+    if (!best || !(bestKm <= maxKm)) return null;
+    return best;
+};
+
+let locationInputPrefilled = false;
 let hasTriedDeviceLocation = false;
 const tryLoadDeviceLocationFirst = async () => {
     if (hasTriedDeviceLocation) return false;
@@ -1877,10 +1914,13 @@ const tryLoadDeviceLocationFirst = async () => {
         if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
 
         const elev = await fetchElevationM(lat, lon);
-        const site = makeCustomSite("Aktueller Standort", lat, lon, elev);
+        const near = findNearestKnownSiteName(lat, lon);
+        const hint = near ? ` · ${near}` : ` · ${lat.toFixed(3)}, ${lon.toFixed(3)}`;
+        const site = makeCustomSite(`Aktueller Standort${hint}`, lat, lon, elev);
         upsertCustomSite(site);
         currentSiteName = site.name;
         if (customLocationInput) customLocationInput.value = site.name;
+        locationInputPrefilled = true;
         hideLocationSuggest();
         await updateSite(site.name);
         return true;
@@ -6543,6 +6583,7 @@ if (customLocationBtn) {
 }
 if (customLocationInput) {
     customLocationInput.addEventListener("input", () => {
+        locationInputPrefilled = false;
         if (alertBox) {
             alertBox.textContent = "";
             alertBox.style.display = "none";
@@ -6564,6 +6605,13 @@ if (customLocationInput) {
         if (alertBox) {
             alertBox.textContent = "";
             alertBox.style.display = "none";
+        }
+        if (locationInputPrefilled && customLocationInput.value.trim()) {
+            customLocationInput.value = "";
+            locationInputPrefilled = false;
+            hideLocationSuggest();
+            if (statusBox && currentPayload) updateStatus(currentPayload);
+            return;
         }
         const query = customLocationInput.value.trim();
         if (query) fetchLocationSuggest(query);
