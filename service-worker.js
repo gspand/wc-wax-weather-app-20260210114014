@@ -1,7 +1,7 @@
 /* eslint-disable no-restricted-globals */
 
-const CACHE_NAME = "alpenwetter-v3";
-const RUNTIME_CACHE = "alpenwetter-runtime-v3";
+const CACHE_NAME = "alpenwetter-v4";
+const RUNTIME_CACHE = "alpenwetter-runtime-v4";
 
 const APP_SHELL = [
     "./",

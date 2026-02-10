@@ -1822,6 +1822,7 @@ const GEO_TS_NWP = `${GEO_BASE}/timeseries/forecast/nwp-v1-1h-2500m`;
 const GEO_TS_NOWCAST = `${GEO_BASE}/timeseries/forecast/nowcast-v1-15min-1km`;
 const WARN_BASE = "https://warnungen.zamg.at/wsapp/api";
 const OPEN_METEO_BASE = "https://api.open-meteo.com/v1/forecast";
+const OPEN_METEO_ELEVATION_BASE = "https://api.open-meteo.com/v1/elevation";
 const GEOCODE_BASE = "https://geocoding-api.open-meteo.com/v1/search";
 // Daily EAWS bulletins (folder per date: YYYY-MM-DD/YYYY-MM-DD-<CODE>.json)
 const AVALANCHE_BASE = "https://static.avalanche.report/eaws_bulletins";
@@ -1833,6 +1834,57 @@ const CACHE_TTL_WARN_MS = 15 * 60 * 1000;
 const CACHE_TTL_UPPER_MS = 6 * 60 * 60 * 1000;
 const CACHE_TTL_OPENMETEO_SURFACE_MS = 3 * 60 * 60 * 1000;
 const CACHE_TTL_AVALANCHE_MS = 6 * 60 * 60 * 1000;
+
+const fetchElevationM = async (lat, lon) => {
+    try {
+        const params = { latitude: String(lat), longitude: String(lon) };
+        const data = await fetchJson(buildUrl(OPEN_METEO_ELEVATION_BASE, params), 8000);
+        const raw = Array.isArray(data?.elevation) ? data.elevation[0] : data?.elevation;
+        const elev = Number(raw);
+        return Number.isFinite(elev) ? elev : null;
+    } catch (err) {
+        return null;
+    }
+};
+
+let hasTriedDeviceLocation = false;
+const tryLoadDeviceLocationFirst = async () => {
+    if (hasTriedDeviceLocation) return false;
+    hasTriedDeviceLocation = true;
+    if (!window.isSecureContext) return false;
+    if (!navigator.geolocation || typeof navigator.geolocation.getCurrentPosition !== "function") return false;
+
+    const prevStatusText = statusBox ? statusBox.textContent : "";
+    if (statusBox) statusBox.textContent = "Standort wird ermittelt...";
+
+    try {
+        const pos = await new Promise((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, {
+                enableHighAccuracy: false,
+                timeout: 8000,
+                maximumAge: 2 * 60 * 1000,
+            });
+        });
+        const lat = Number(pos?.coords?.latitude);
+        const lon = Number(pos?.coords?.longitude);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
+
+        const elev = await fetchElevationM(lat, lon);
+        const site = makeCustomSite("Aktueller Standort", lat, lon, elev);
+        upsertCustomSite(site);
+        currentSiteName = site.name;
+        if (customLocationInput) customLocationInput.value = site.name;
+        hideLocationSuggest();
+        await updateSite(site.name);
+        return true;
+    } catch (err) {
+        if (statusBox) {
+            if (currentPayload) updateStatus(currentPayload);
+            else if (prevStatusText) statusBox.textContent = prevStatusText;
+        }
+        return false;
+    }
+};
 
 const AVALANCHE_REGION_ALL_CODES = [
     "AT-02",
@@ -6633,9 +6685,14 @@ if (window.visualViewport) {
 }
 
 showPage("overview");
-updateSite(currentSiteName);
-startAutoRefresh();
 renderPinnedSites();
+(async () => {
+    const usedDeviceLocation = await tryLoadDeviceLocationFirst();
+    if (!usedDeviceLocation) {
+        updateSite(currentSiteName);
+    }
+    startAutoRefresh();
+})();
     </script>
     <script
         src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
