@@ -4161,7 +4161,6 @@ function renderOverview(payload) {
     const gustOverProb = features.gust_over_prob?.[idx];
     const zeroAsl = features.freezing_level_asl?.[idx];
     const wetSnowRisk = features.wet_snow_risk?.[idx];
-    const bestWindow = features.best_window;
 
     const riskPercent = (value) => (
         value === null || value === undefined || Number.isNaN(value)
@@ -4169,22 +4168,7 @@ function renderOverview(payload) {
             : `${Math.round(value * 100)}%`
     );
 
-    let startWindowValue = "-";
-    let startWindowSub = "-";
-    if (bestWindow) {
-        const startLabel = series.labels?.[bestWindow.startIdx] || formatLabel(labelsIso?.[bestWindow.startIdx]);
-        const endLabel = series.labels?.[bestWindow.endIdx] || formatLabel(labelsIso?.[bestWindow.endIdx]);
-        const peakLabel = series.labels?.[bestWindow.peakIdx] || formatLabel(labelsIso?.[bestWindow.peakIdx]);
-        startWindowValue = `${startLabel} - ${endLabel}`;
-        startWindowSub = `Peak ${peakLabel} | \u00b1${bestWindow.uncertaintyMin ?? "-"} min`;
-    }
-
     const items = [
-        {
-            title: "Startfenster",
-            value: startWindowValue,
-            sub: startWindowSub,
-        },
         {
             title: "Niederschlag & N\u00e4sse",
             value: `${formatValue(precipNow, "mm")} jetzt`,
