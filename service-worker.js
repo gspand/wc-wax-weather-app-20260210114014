@@ -1,7 +1,7 @@
 /* eslint-disable no-restricted-globals */
 
-const CACHE_NAME = "alpenwetter-v1";
-const RUNTIME_CACHE = "alpenwetter-runtime-v1";
+const CACHE_NAME = "alpenwetter-v2";
+const RUNTIME_CACHE = "alpenwetter-runtime-v2";
 
 const APP_SHELL = [
     "./",
@@ -133,4 +133,3 @@ self.addEventListener("fetch", (event) => {
         event.respondWith(cacheFirst(request, RUNTIME_CACHE));
     }
 });
-

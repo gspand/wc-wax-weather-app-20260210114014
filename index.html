@@ -208,6 +208,8 @@
         .tabs {
             display: flex;
             gap: 8px;
+            align-items: center;
+            min-width: 0;
         }
         .tab-btn {
             border: 1px solid var(--line);
@@ -220,6 +222,8 @@
             transition: all 0.2s ease;
             text-transform: uppercase;
             letter-spacing: 0.14em;
+            flex: 0 0 auto;
+            white-space: nowrap;
         }
         .tab-btn.active {
             background: linear-gradient(135deg, rgba(94, 234, 212, 0.3), rgba(250, 204, 21, 0.2));
@@ -607,6 +611,21 @@
         }
         .thermik-wrap {
             height: 420px;
+            overflow-x: auto;
+            overflow-y: hidden;
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior-x: contain;
+            border-radius: 14px;
+        }
+        .thermik-wrap::-webkit-scrollbar {
+            height: 8px;
+        }
+        .thermik-wrap::-webkit-scrollbar-thumb {
+            background: rgba(15, 23, 42, 0.22);
+            border-radius: 999px;
+        }
+        .thermik-wrap::-webkit-scrollbar-track {
+            background: transparent;
         }
         #thermikMatrix {
             max-height: 420px;
@@ -720,11 +739,14 @@
             }
             .tabs {
                 overflow-x: auto;
-                padding-bottom: 6px;
+                overflow-y: hidden;
+                -webkit-overflow-scrolling: touch;
+                scroll-snap-type: x mandatory;
+                scroll-padding: 12px;
+                padding-bottom: 10px;
             }
             .tab-btn {
-                flex: 0 0 auto;
-                white-space: nowrap;
+                scroll-snap-align: start;
             }
             .toolbar-actions {
                 width: 100%;
@@ -806,7 +828,8 @@
             }
             .tab-btn {
                 padding: 8px 12px;
-                font-size: 11px;
+                font-size: 12px;
+                letter-spacing: 0.11em;
             }
             .chart-wrap {
                 height: 220px;
@@ -4605,6 +4628,22 @@ function renderThermikMatrix(payload) {
     if (!n) return;
     const ctx = thermikMatrix.getContext("2d");
     if (!ctx) return;
+
+    // On mobile, we need a wider canvas so time-columns stay readable.
+    // The wrapper is horizontally scrollable, so this does not cause page-level overflow.
+    const narrow = window.matchMedia && window.matchMedia("(max-width: 960px)").matches;
+    const wrap = thermikMatrix.closest(".thermik-wrap");
+    if (narrow) {
+        const baseW = wrap ? wrap.clientWidth : thermikMatrix.parentElement?.clientWidth;
+        const targetCellW = n >= 44 ? 14 : n >= 30 ? 16 : 18;
+        const desiredW = Math.round(220 + n * targetCellW);
+        const nextW = Math.max(baseW || 0, desiredW);
+        const nextStyle = `${nextW}px`;
+        if (thermikMatrix.style.width !== nextStyle) thermikMatrix.style.width = nextStyle;
+    } else if (thermikMatrix.style.width && thermikMatrix.style.width !== "100%") {
+        thermikMatrix.style.width = "100%";
+    }
+
     const width = thermikMatrix.clientWidth;
     const height = thermikMatrix.clientHeight;
     if (width < 80 || height < 120) return;
@@ -6289,6 +6328,18 @@ function showPage(target) {
     if (tabCrossCountry) tabCrossCountry.classList.toggle("active", target === "xc");
     if (tabSkitour) tabSkitour.classList.toggle("active", target === "skitour");
     if (tabCycling) tabCycling.classList.toggle("active", target === "cycling");
+
+    // Keep the active pill visible on mobile when the tab row is scrollable.
+    if (window.matchMedia && window.matchMedia("(max-width: 960px)").matches) {
+        const active = document.querySelector(".tabs .tab-btn.active");
+        if (active && active.scrollIntoView) {
+            try {
+                active.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+            } catch {
+                active.scrollIntoView();
+            }
+        }
+    }
 
     if (target === "paragliding" && mapInstance) {
         setTimeout(() => mapInstance.invalidateSize(true), 200);
