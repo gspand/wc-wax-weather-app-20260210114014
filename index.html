@@ -1969,14 +1969,11 @@ const tryLoadDeviceLocationFirst = async () => {
         if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
 
         const elev = await fetchElevationM(lat, lon);
-        const coords = `${lat.toFixed(3)}, ${lon.toFixed(3)}`;
         const near = findNearestKnownSite(lat, lon);
-        const hintParts = [];
-        if (near && near.name) hintParts.push(`${near.name} (${near.km} km)`);
-        hintParts.push(coords);
         const site = makeCustomSite("Aktueller Standort", lat, lon, elev);
         site.is_device_location = true;
-        site.device_hint = hintParts.join(" | ");
+        // Keep this short in the UI. Details (coords) are already shown in the subtitle.
+        site.device_hint = near?.name || null;
         upsertCustomSite(site);
         currentSiteName = site.name;
         if (customLocationInput) customLocationInput.value = site.name;
@@ -4211,7 +4208,7 @@ function updateHero(payload) {
         const name = site.name || "Wetterkarte";
         const hint = site?.device_hint;
         if (hint && normalizeSiteName(name).startsWith("aktueller standort")) {
-            heroTitle.textContent = `${name} (${hint})`;
+            heroTitle.textContent = `${name} - ${hint}`;
         } else {
             heroTitle.textContent = name;
         }
