@@ -4148,8 +4148,8 @@
                 }
 
                 const shearPenalty = shear !== null ? clamp(shear / 8, 0, 1) : 0.2;
-                let utility = 0.75 * thermalMaturity + 0.15 * safetyScore - 0.05 * convectionRisk - 0.02 * shearPenalty;
-                let flyability = 1 / (1 + Math.exp(-2.4 * (utility - 0.22)));
+                let utility = 0.82 * thermalMaturity + 0.12 * safetyScore - 0.035 * convectionRisk - 0.01 * shearPenalty;
+                let flyability = 1 / (1 + Math.exp(-2.0 * (utility - 0.18)));
 
                 features.insolation_quality.push(insolation);
                 features.thermal_maturity.push(thermalMaturity);
