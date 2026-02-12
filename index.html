@@ -4148,8 +4148,8 @@
                 }
 
                 const shearPenalty = shear !== null ? clamp(shear / 8, 0, 1) : 0.2;
-                let utility = 0.7 * thermalMaturity + 0.2 * safetyScore - 0.08 * convectionRisk - 0.02 * shearPenalty;
-                let flyability = 1 / (1 + Math.exp(-2.8 * (utility - 0.3)));
+                let utility = 0.75 * thermalMaturity + 0.15 * safetyScore - 0.05 * convectionRisk - 0.02 * shearPenalty;
+                let flyability = 1 / (1 + Math.exp(-2.4 * (utility - 0.22)));
 
                 features.insolation_quality.push(insolation);
                 features.thermal_maturity.push(thermalMaturity);
@@ -4202,11 +4202,13 @@
                 const rideTemp = temp !== null && temp !== undefined ? (feelsLike ?? temp) : null;
                 if (rideTemp !== null && rideTemp !== undefined) {
                     if (rideTemp <= 22) {
-                        comfort = clamp((rideTemp - 8) / 14, 0, 1);
+                        comfort = clamp((rideTemp - 7) / 15, 0, 1);
                     } else if (rideTemp <= 30) {
                         comfort = 1;
+                    } else if (rideTemp <= 34) {
+                        comfort = clamp((34 - rideTemp) / 4, 0, 1);
                     } else {
-                        comfort = clamp((40 - rideTemp) / 10, 0, 1);
+                        comfort = clamp((40 - rideTemp) / 6, 0, 1);
                     }
                 }
                 const tempRisk = clamp(1 - comfort, 0, 1);
@@ -4233,7 +4235,7 @@
                     iceRisk = clamp(cold * (0.4 + 0.6 * wetness), 0, 1);
                 }
 
-                let rideScore = 100 * clamp(1 - (0.26 * precipRisk + 0.2 * windRisk + 0.42 * tempRisk + 0.12 * darkRisk), 0, 1);
+                let rideScore = 100 * clamp(1 - (0.26 * precipRisk + 0.26 * windRisk + 0.32 * tempRisk + 0.12 * darkRisk), 0, 1);
                 if (precipRisk > 0.7) rideScore = Math.min(rideScore, 40);
                 if (convectionRisk > 0.6) rideScore = Math.min(rideScore, 50);
                 if (rideTemp !== null && rideTemp < 8) rideScore = Math.min(rideScore, 65);
