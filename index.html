@@ -43,6 +43,9 @@
             --line: rgba(148, 163, 184, 0.16);
             --glow: rgba(94, 234, 212, 0.25);
             --shadow: 0 24px 60px rgba(4, 10, 20, 0.45);
+            --shadow-soft: 0 18px 38px rgba(4, 10, 20, 0.38);
+            --shadow-strong: 0 28px 70px rgba(4, 10, 20, 0.55);
+            --ring: rgba(94, 234, 212, 0.55);
             --radius: 18px;
             --font-body: "Space Grotesk", "IBM Plex Sans", "Fira Sans", sans-serif;
             --font-display: "Fraunces", "Cormorant Garamond", serif;
@@ -56,6 +59,8 @@
             margin: 0;
             min-height: 100vh;
             font-family: var(--font-body);
+            font-size: 15px;
+            line-height: 1.55;
             color: var(--text);
             background:
                 radial-gradient(1200px 700px at 15% -10%, rgba(94, 234, 212, 0.18) 0%, rgba(11, 17, 27, 0) 55%),
@@ -110,9 +115,10 @@
                 linear-gradient(135deg, rgba(94, 234, 212, 0.14), rgba(12, 22, 38, 0.2) 60%),
                 linear-gradient(180deg, rgba(15, 25, 40, 0.96), rgba(12, 22, 38, 0.7));
             border: 1px solid var(--line);
-            box-shadow: var(--shadow);
+            box-shadow: var(--shadow-strong);
             position: relative;
             overflow: hidden;
+            backdrop-filter: blur(12px);
             animation: heroIn 0.6s ease both;
         }
 
@@ -169,7 +175,7 @@
             padding: 14px 16px;
             border-radius: 14px;
             background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(12, 22, 38, 0.6));
-            border: 1px solid rgba(148, 163, 184, 0.16);
+            border: 1px solid rgba(148, 163, 184, 0.2);
             box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
         }
 
@@ -247,13 +253,15 @@
             letter-spacing: 0.14em;
             flex: 0 0 auto;
             white-space: nowrap;
+            backdrop-filter: blur(8px);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
         }
 
         .tab-btn.active {
             background: linear-gradient(135deg, rgba(94, 234, 212, 0.3), rgba(250, 204, 21, 0.2));
             color: var(--text);
             border-color: rgba(94, 234, 212, 0.5);
-            box-shadow: 0 10px 24px rgba(6, 10, 20, 0.35);
+            box-shadow: 0 12px 30px rgba(6, 10, 20, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.14);
         }
 
         .tab-btn:hover {
@@ -308,6 +316,17 @@
             padding: 6px 10px;
             border-radius: 10px;
             min-width: 220px;
+        }
+
+        .location select,
+        .location input {
+            transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+        }
+
+        .location select:focus-visible,
+        .location input:focus-visible {
+            border-color: var(--ring);
+            box-shadow: 0 0 0 3px rgba(94, 234, 212, 0.18);
         }
 
         .location .mini-btn {
@@ -411,9 +430,10 @@
             padding: 6px 10px;
             border-radius: 999px;
             border: 1px solid rgba(148, 163, 184, 0.4);
-            background: rgba(15, 23, 42, 0.6);
+            background: linear-gradient(135deg, rgba(15, 23, 42, 0.72), rgba(12, 20, 34, 0.6));
             font-size: 12px;
             cursor: pointer;
+            transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
         }
 
         .pin-chip .remove {
@@ -424,6 +444,8 @@
 
         .pin-chip:hover {
             border-color: rgba(94, 234, 212, 0.5);
+            transform: translateY(-1px);
+            box-shadow: 0 8px 16px rgba(4, 10, 20, 0.3);
         }
 
         .ghost-btn {
@@ -433,10 +455,13 @@
             background: rgba(10, 18, 32, 0.6);
             color: var(--text);
             font-size: 11px;
+            font-weight: 600;
             cursor: pointer;
             text-transform: uppercase;
             letter-spacing: 0.18em;
             transition: all 0.2s ease;
+            backdrop-filter: blur(8px);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
         }
 
         .ghost-btn:hover {
@@ -522,11 +547,11 @@
         }
 
         .card {
-            background: var(--card);
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(0, 0, 0, 0.15)), var(--card);
             border-radius: var(--radius);
             padding: 16px;
-            box-shadow: 0 16px 32px rgba(4, 10, 20, 0.4);
-            border: 1px solid var(--line);
+            box-shadow: var(--shadow-soft);
+            border: 1px solid rgba(148, 163, 184, 0.18);
             backdrop-filter: blur(8px);
             position: relative;
             overflow: hidden;
@@ -546,7 +571,7 @@
         .card:hover {
             transform: translateY(-4px);
             border-color: rgba(94, 234, 212, 0.45);
-            box-shadow: 0 24px 50px rgba(4, 10, 20, 0.55);
+            box-shadow: var(--shadow-strong);
         }
 
         .card:hover::before {
@@ -624,16 +649,17 @@
             min-height: 420px;
             border-radius: var(--radius);
             overflow: hidden;
-            box-shadow: 0 18px 36px rgba(4, 10, 20, 0.45);
-            border: 1px solid var(--line);
+            box-shadow: var(--shadow-soft);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            background: #0b111b;
         }
 
         .panel {
-            background: var(--panel);
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(0, 0, 0, 0.2)), var(--panel);
             border-radius: var(--radius);
             padding: 18px;
-            border: 1px solid var(--line);
-            box-shadow: 0 18px 36px rgba(4, 10, 20, 0.45);
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            box-shadow: var(--shadow-soft);
             backdrop-filter: blur(8px);
             animation: liftIn 0.6s ease both;
         }
