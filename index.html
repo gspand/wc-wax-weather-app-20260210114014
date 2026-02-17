@@ -1197,6 +1197,7 @@
                 <button class="tab-btn" id="tabCycling" type="button" onclick="showPage('cycling')">Radfahren</button>
                 <button class="tab-btn" id="tabParagliding" type="button"
                     onclick="showPage('paragliding')">Paragleiten</button>
+                <button class="tab-btn" id="tabMap" type="button" onclick="showPage('map')">Karte</button>
                 <button class="tab-btn" id="tabCrossCountry" type="button" onclick="showPage('xc')">Langlaufen</button>
                 <button class="tab-btn" id="tabSkitour" type="button" onclick="showPage('skitour')">Skitouren</button>
             </div>
@@ -1380,6 +1381,9 @@
                     </div>
                 </div>
             </section>
+        </section>
+
+        <section class="page" id="pageMap">
             <section class="grid">
                 <div class="panel map-panel">
                     <div id="map"></div>
@@ -2619,11 +2623,13 @@
 
         const tabOverview = document.getElementById("tabOverview");
         const tabParagliding = document.getElementById("tabParagliding");
+        const tabMap = document.getElementById("tabMap");
         const tabCrossCountry = document.getElementById("tabCrossCountry");
         const tabSkitour = document.getElementById("tabSkitour");
         const tabCycling = document.getElementById("tabCycling");
         const pageOverview = document.getElementById("pageOverview");
         const pageParagliding = document.getElementById("pageParagliding");
+        const pageMap = document.getElementById("pageMap");
         const pageCrossCountry = document.getElementById("pageCrossCountry");
         const pageSkitour = document.getElementById("pageSkitour");
         const pageCycling = document.getElementById("pageCycling");
@@ -6995,12 +7001,14 @@
         function showPage(target) {
             if (pageOverview) pageOverview.classList.toggle("active", target === "overview");
             if (pageParagliding) pageParagliding.classList.toggle("active", target === "paragliding");
+            if (pageMap) pageMap.classList.toggle("active", target === "map");
             if (pageCrossCountry) pageCrossCountry.classList.toggle("active", target === "xc");
             if (pageSkitour) pageSkitour.classList.toggle("active", target === "skitour");
             if (pageCycling) pageCycling.classList.toggle("active", target === "cycling");
 
             if (tabOverview) tabOverview.classList.toggle("active", target === "overview");
             if (tabParagliding) tabParagliding.classList.toggle("active", target === "paragliding");
+            if (tabMap) tabMap.classList.toggle("active", target === "map");
             if (tabCrossCountry) tabCrossCountry.classList.toggle("active", target === "xc");
             if (tabSkitour) tabSkitour.classList.toggle("active", target === "skitour");
             if (tabCycling) tabCycling.classList.toggle("active", target === "cycling");
@@ -7017,7 +7025,7 @@
                 }
             }
 
-            if (target === "paragliding" && mapInstance) {
+            if ((target === "paragliding" || target === "map") && mapInstance) {
                 setTimeout(() => mapInstance.invalidateSize(true), 200);
             }
             if (target === "paragliding") {
