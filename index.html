@@ -2825,12 +2825,22 @@
                 ttlMs: 20 * 60 * 1000,
                 padRatio: 0.24,
                 targetKey: "high",
+                maxSpanLat: 3.8,
+                maxSpanLon: 5.2,
+                fetchTimeoutMs: 22000,
                 value: (params, idx) => {
                     const u = params.u10m?.data?.[idx];
                     const v = params.v10m?.data?.[idx];
                     if (u === null || v === null || u === undefined || v === undefined) return null;
                     if (Number.isNaN(u) || Number.isNaN(v)) return null;
                     return Math.sqrt(u * u + v * v) * 3.6;
+                },
+                vector: (params, idx) => {
+                    const u = params.u10m?.data?.[idx];
+                    const v = params.v10m?.data?.[idx];
+                    if (u === null || v === null || u === undefined || v === undefined) return null;
+                    if (Number.isNaN(u) || Number.isNaN(v)) return null;
+                    return { u, v };
                 },
             },
             precip: {
@@ -2847,12 +2857,16 @@
                 ttlMs: 20 * 60 * 1000,
                 padRatio: 0.24,
                 targetKey: "high",
+                maxSpanLat: 3.8,
+                maxSpanLon: 5.2,
+                fetchTimeoutMs: 22000,
                 value: (params, idx) => params.rr_acc?.data?.[idx] ?? null,
             },
             cloud: {
                 label: "Wolken",
                 resource: "nwp-v1-1h-2500m",
                 params: ["tcc"],
+                paramCandidates: [["tcc"], ["clct"]],
                 unit: "%",
                 min: 0,
                 max: 100,
@@ -2863,10 +2877,13 @@
                 ttlMs: 20 * 60 * 1000,
                 padRatio: 0.24,
                 targetKey: "high",
+                maxSpanLat: 3.8,
+                maxSpanLon: 5.2,
+                fetchTimeoutMs: 24000,
                 value: (params, idx) => {
-                    const raw = params.tcc?.data?.[idx];
+                    const raw = params.tcc?.data?.[idx] ?? params.clct?.data?.[idx];
                     if (raw === null || raw === undefined) return null;
-                    return raw * 100;
+                    return raw <= 1 ? raw * 100 : raw;
                 },
             },
             nowcast: {
@@ -2883,6 +2900,9 @@
                 ttlMs: 4 * 60 * 1000,
                 padRatio: 0.18,
                 targetKey: "mid",
+                maxSpanLat: 2.7,
+                maxSpanLon: 3.7,
+                fetchTimeoutMs: 22000,
                 value: (params, idx) => params.rr?.data?.[idx] ?? null,
             },
         };
@@ -7317,6 +7337,24 @@
             );
         };
 
+        const limitBboxSpan = (bbox, maxLatSpan, maxLonSpan, limits) => {
+            if (!bbox) return bbox;
+            let { south, west, north, east } = bbox;
+            const centerLat = (south + north) * 0.5;
+            const centerLon = (west + east) * 0.5;
+            const latSpan = north - south;
+            const lonSpan = east - west;
+            if (Number.isFinite(maxLatSpan) && maxLatSpan > 0 && latSpan > maxLatSpan) {
+                south = centerLat - maxLatSpan * 0.5;
+                north = centerLat + maxLatSpan * 0.5;
+            }
+            if (Number.isFinite(maxLonSpan) && maxLonSpan > 0 && lonSpan > maxLonSpan) {
+                west = centerLon - maxLonSpan * 0.5;
+                east = centerLon + maxLonSpan * 0.5;
+            }
+            return clampBbox({ south, west, north, east }, limits);
+        };
+
         const bboxContains = (outer, inner) => {
             if (!outer || !inner) return false;
             return (
@@ -7426,8 +7464,8 @@
         const setMapMeta = (config, timestamp, suffix = "") => {
             if (!mapMeta || !config) return;
             const timeLabel = timestamp ? formatLabel(timestamp) : "";
-            const suffixLabel = suffix ? ` · ${suffix}` : "";
-            mapMeta.textContent = timeLabel ? `${config.label} · ${timeLabel}${suffixLabel}` : `${config.label}${suffixLabel}`;
+            const suffixLabel = suffix ? ` \u00b7 ${suffix}` : "";
+            mapMeta.textContent = timeLabel ? `${config.label} \u00b7 ${timeLabel}${suffixLabel}` : `${config.label}${suffixLabel}`;
         };
 
         const syncMapTimeUi = () => {
@@ -7478,14 +7516,63 @@
             }, MAP_PLAY_INTERVAL_MS);
         };
 
-        const fetchGeosphereGridForecast = async (resourceId, params, bbox) => {
+        const fetchGeosphereGridForecast = async (resourceId, params, bbox, timeoutMs = FETCH_TIMEOUT_MS) => {
             const query = {
                 parameters: params,
                 bbox: toBboxString(bbox),
                 output_format: "geojson",
             };
             const url = buildUrl(`${GEO_BASE}/grid/forecast/${resourceId}`, query);
-            return fetchJson(url, FETCH_TIMEOUT_MS);
+            return fetchJson(url, timeoutMs);
+        };
+
+        const normalizeParamSets = (config) => {
+            const candidates = Array.isArray(config?.paramCandidates) && config.paramCandidates.length
+                ? config.paramCandidates
+                : [config?.params || []];
+            return candidates
+                .map((entry) => (Array.isArray(entry) ? entry : [entry]))
+                .map((entry) => entry.filter(Boolean))
+                .filter((entry) => entry.length);
+        };
+
+        const hasOverlayPayload = (data) => {
+            const features = Array.isArray(data?.features) ? data.features : [];
+            const timestamps = Array.isArray(data?.timestamps) ? data.timestamps : [];
+            return features.length > 0 && timestamps.length > 0;
+        };
+
+        const fetchOverlayDataWithFallback = async (config, viewBbox, limits) => {
+            const timeoutMs = Math.max(FETCH_TIMEOUT_MS, config.fetchTimeoutMs || FETCH_TIMEOUT_MS);
+            const primaryBounds = limitBboxSpan(
+                expandBbox(viewBbox, config.padRatio ?? 0.2, limits),
+                config.maxSpanLat,
+                config.maxSpanLon,
+                limits,
+            );
+            const fallbackBounds = limitBboxSpan(
+                viewBbox,
+                Number.isFinite(config.maxSpanLat) ? config.maxSpanLat * 0.8 : null,
+                Number.isFinite(config.maxSpanLon) ? config.maxSpanLon * 0.8 : null,
+                limits,
+            );
+            const boundCandidates = [primaryBounds];
+            if (!bboxContains(primaryBounds, fallbackBounds)) boundCandidates.push(fallbackBounds);
+            const paramSets = normalizeParamSets(config);
+            let lastErr = null;
+
+            for (const bounds of boundCandidates) {
+                for (const paramSet of paramSets) {
+                    try {
+                        const data = await fetchGeosphereGridForecast(config.resource, paramSet, bounds, timeoutMs);
+                        if (hasOverlayPayload(data)) return { data, fetchBounds: bounds, paramsUsed: paramSet };
+                        lastErr = new Error("overlay payload empty");
+                    } catch (err) {
+                        lastErr = err;
+                    }
+                }
+            }
+            throw lastErr || new Error("overlay fetch failed");
         };
 
         const buildOverlayCache = (data, fetchBounds, config) => {
@@ -7529,6 +7616,36 @@
             return `${zoom}|${center.lat.toFixed(4)}|${center.lng.toFixed(4)}|${size.x}x${size.y}`;
         };
 
+        const drawMapWindArrow = (ctx, x, y, u, v, length) => {
+            const mag = Math.sqrt(u * u + v * v);
+            if (!Number.isFinite(mag) || mag < 0.35) return;
+            const dx = (u / mag) * length;
+            const dy = (-v / mag) * length;
+            const x2 = x + dx;
+            const y2 = y + dy;
+            const ang = Math.atan2(dy, dx);
+            const head = Math.max(2.5, length * 0.28);
+
+            const drawSegment = (color, width) => {
+                ctx.strokeStyle = color;
+                ctx.lineWidth = width;
+                ctx.beginPath();
+                ctx.moveTo(x, y);
+                ctx.lineTo(x2, y2);
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.moveTo(x2, y2);
+                ctx.lineTo(x2 + Math.cos(ang + Math.PI * 0.78) * head, y2 + Math.sin(ang + Math.PI * 0.78) * head);
+                ctx.moveTo(x2, y2);
+                ctx.lineTo(x2 + Math.cos(ang - Math.PI * 0.78) * head, y2 + Math.sin(ang - Math.PI * 0.78) * head);
+                ctx.stroke();
+            };
+
+            drawSegment("rgba(8, 15, 28, 0.72)", 2.4);
+            drawSegment("rgba(236, 246, 255, 0.92)", 1.2);
+        };
+
         const renderOverlayCanvas = (cache, config, timeIndex) => {
             if (!mapInstance || !cache || !config) return null;
             const size = mapInstance.getSize();
@@ -7566,6 +7683,32 @@
                 if (xy.x < -cellW || xy.x > size.x + cellW || xy.y < -cellH || xy.y > size.y + cellH) continue;
                 ctx.fillStyle = colorRamp(value, config.min, config.max, config.colors);
                 ctx.fillRect(xy.x - cellW / 2, xy.y - cellH / 2, cellW, cellH);
+            }
+
+            if (typeof config.vector === "function") {
+                const arrowTarget = Math.max(450, Math.round(targetPoints * 0.08));
+                const arrowStride = Math.max(stride, Math.ceil(cache.points.length / arrowTarget));
+                const arrowOffset = arrowStride > 1 ? ((timeIndex * 3) % arrowStride) : 0;
+                const bucketSize = 28;
+                const occupied = new Set();
+                for (let i = arrowOffset; i < cache.points.length; i += arrowStride) {
+                    const pt = cache.points[i];
+                    if (!pt) continue;
+                    if (pt.lat < south - padLat || pt.lat > north + padLat || pt.lon < west - padLon || pt.lon > east + padLon) continue;
+                    const vec = config.vector(pt.params, timeIndex);
+                    if (!vec) continue;
+                    const speed = Math.sqrt((vec.u || 0) * (vec.u || 0) + (vec.v || 0) * (vec.v || 0));
+                    if (!Number.isFinite(speed) || speed < 0.8) continue;
+                    const xy = mapInstance.latLngToContainerPoint([pt.lat, pt.lon]);
+                    if (xy.x < -cellW || xy.x > size.x + cellW || xy.y < -cellH || xy.y > size.y + cellH) continue;
+                    const bx = Math.round(xy.x / bucketSize);
+                    const by = Math.round(xy.y / bucketSize);
+                    const bucketKey = `${bx}:${by}`;
+                    if (occupied.has(bucketKey)) continue;
+                    occupied.add(bucketKey);
+                    const length = clamp(6 + speed * 0.9, 6, 14);
+                    drawMapWindArrow(ctx, xy.x, xy.y, vec.u, vec.v, length);
+                }
             }
             return canvas;
         };
@@ -7612,21 +7755,21 @@
             const viewBboxRaw = getMapViewBbox();
             if (!viewBboxRaw) return;
             const viewBbox = clampBbox(viewBboxRaw, limits);
+            const viewBboxLimited = limitBboxSpan(viewBbox, config.maxSpanLat, config.maxSpanLon, limits);
             const previousTs = mapOverlayTimestamps[mapOverlayIndex] || null;
             const cached = mapOverlayCache[mapOverlayKey];
             const isFresh = cached && (Date.now() - cached.fetchedAt) < (config.ttlMs || 10 * 60 * 1000);
-            const canReuse = isFresh && bboxContains(cached.fetchBounds, viewBbox);
+            const canReuse = isFresh && bboxContains(cached.fetchBounds, viewBboxLimited);
             const forceFetch = !!opts.forceFetch;
             let layerCache = cached;
 
             if (!canReuse || forceFetch) {
                 const reqId = ++mapOverlayRequestId;
-                const fetchBounds = expandBbox(viewBbox, config.padRatio ?? 0.2, limits);
                 try {
                     setMapMeta(config, null, "lade...");
-                    const data = await fetchGeosphereGridForecast(config.resource, config.params, fetchBounds);
+                    const fetched = await fetchOverlayDataWithFallback(config, viewBboxLimited, limits);
                     if (reqId !== mapOverlayRequestId) return;
-                    const built = buildOverlayCache(data, fetchBounds, config);
+                    const built = buildOverlayCache(fetched.data, fetched.fetchBounds, config);
                     if (!built || !built.points.length || !built.timestamps.length) {
                         stopMapPlay();
                         mapOverlayTimestamps = [];
@@ -7646,7 +7789,9 @@
                         mapInstance.removeLayer(mapOverlayLayer);
                         mapOverlayLayer = null;
                     }
-                    setMapMeta(config, null, "Fehler");
+                    const reason = typeof err?.message === "string" && err.message ? err.message : "unbekannt";
+                    if (/timed out|abort|aborted/i.test(reason)) setMapMeta(config, null, "Timeout");
+                    else setMapMeta(config, null, "Fehler");
                     return;
                 }
             }
