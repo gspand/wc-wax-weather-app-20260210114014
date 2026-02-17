@@ -17,6 +17,7 @@
     <title>ALPENWETTER LAB • Dashboard</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <script src="https://cdn.jsdelivr.net/npm/proj4@2.9.2/dist/proj4.min.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -703,6 +704,140 @@
             background: #0a101a;
         }
 
+        .map-panel {
+            min-height: 420px;
+            position: relative;
+        }
+
+        .map-panel.map-panel-full {
+            min-height: 520px;
+        }
+
+        .map-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            padding: 14px 32px 0;
+            flex-wrap: wrap;
+        }
+
+        .map-layer-group {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .map-layer-btn {
+            border: 1px solid rgba(148, 163, 184, 0.24);
+            background: linear-gradient(135deg, rgba(10, 18, 32, 0.8), rgba(10, 18, 32, 0.55));
+            color: var(--text);
+            font-size: 11px;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            padding: 7px 14px;
+            border-radius: 999px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .map-layer-btn.active {
+            border-color: rgba(94, 234, 212, 0.6);
+            background: linear-gradient(135deg, rgba(94, 234, 212, 0.28), rgba(96, 165, 250, 0.2));
+            box-shadow: 0 12px 26px rgba(4, 10, 20, 0.45);
+        }
+
+        .map-layer-btn:hover {
+            transform: translateY(-1px);
+            border-color: rgba(94, 234, 212, 0.5);
+        }
+
+        .map-meta {
+            color: var(--muted);
+            font-size: 12px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .map-time {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .map-time input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 180px;
+            height: 6px;
+            border-radius: 999px;
+            background: rgba(148, 163, 184, 0.2);
+            outline: none;
+        }
+
+        .map-time input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, rgba(94, 234, 212, 0.9), rgba(96, 165, 250, 0.9));
+            border: 1px solid rgba(255, 255, 255, 0.6);
+            box-shadow: 0 8px 16px rgba(4, 10, 20, 0.45);
+        }
+
+        .map-time input[type="range"]::-moz-range-thumb {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, rgba(94, 234, 212, 0.9), rgba(96, 165, 250, 0.9));
+            border: 1px solid rgba(255, 255, 255, 0.6);
+            box-shadow: 0 8px 16px rgba(4, 10, 20, 0.45);
+        }
+
+        .map-time-label {
+            font-size: 12px;
+            color: var(--text-soft);
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            min-width: 120px;
+        }
+
+        .map-legend {
+            position: absolute;
+            left: 16px;
+            bottom: 16px;
+            padding: 10px 12px;
+            border-radius: 12px;
+            background: rgba(10, 18, 32, 0.85);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            box-shadow: 0 14px 28px rgba(4, 10, 20, 0.45);
+            backdrop-filter: blur(8px);
+            min-width: 160px;
+        }
+
+        .map-legend-title {
+            font-size: 11px;
+            color: var(--text-soft);
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+        }
+
+        .map-legend-bar {
+            height: 6px;
+            border-radius: 999px;
+            margin: 8px 0 6px;
+            background: linear-gradient(90deg, #38bdf8, #facc15, #f97316, #ef4444);
+        }
+
+        .map-legend-labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            color: var(--muted);
+        }
+
         .panel {
             background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(0, 0, 0, 0.2)), var(--panel);
             border-radius: var(--radius);
@@ -1384,9 +1519,27 @@
         </section>
 
         <section class="page" id="pageMap">
+            <section class="map-toolbar">
+                <div>
+                    <span class="inline-label">Layer</span>
+                    <div class="map-layer-group">
+                        <button class="map-layer-btn active" data-layer="wind" type="button">Wind</button>
+                        <button class="map-layer-btn" data-layer="precip" type="button">Regen</button>
+                        <button class="map-layer-btn" data-layer="cloud" type="button">Wolken</button>
+                        <button class="map-layer-btn" data-layer="nowcast" type="button">Nowcast</button>
+                    </div>
+                </div>
+                <div class="map-time">
+                    <button class="ghost-btn" id="mapPlayBtn" type="button">Play</button>
+                    <input id="mapTimeRange" type="range" min="0" max="0" value="0" />
+                    <span class="map-time-label" id="mapTimeLabel">--</span>
+                </div>
+                <div class="map-meta" id="mapMeta"></div>
+            </section>
             <section class="grid">
-                <div class="panel map-panel">
+                <div class="panel map-panel map-panel-full">
                     <div id="map"></div>
+                    <div class="map-legend" id="mapLegend"></div>
                 </div>
             </section>
         </section>
@@ -2633,10 +2786,106 @@
         const pageCrossCountry = document.getElementById("pageCrossCountry");
         const pageSkitour = document.getElementById("pageSkitour");
         const pageCycling = document.getElementById("pageCycling");
+        const mapMeta = document.getElementById("mapMeta");
+        const mapLegend = document.getElementById("mapLegend");
+        const mapLayerButtons = Array.from(document.querySelectorAll(".map-layer-btn"));
+        const mapTimeRange = document.getElementById("mapTimeRange");
+        const mapTimeLabel = document.getElementById("mapTimeLabel");
+        const mapPlayBtn = document.getElementById("mapPlayBtn");
 
         let currentPayload = null;
         let mapInstance = null;
         let markerInstance = null;
+        let mapOverlayLayer = null;
+        let mapOverlayKey = "wind";
+        let mapOverlayTimer = null;
+        let mapOverlayRequestId = 0;
+        let mapOverlayIndex = 0;
+        let mapOverlayCache = {};
+        let mapOverlayTimestamps = [];
+        let mapPlayTimer = null;
+        let mapPlayActive = false;
+        const MAP_PLAY_INTERVAL_MS = 850;
+        const MAP_FRAME_CACHE_LIMIT = 28;
+        const MAP_RENDER_TARGET_POINTS = { high: 28000, mid: 18000, low: 10000 };
+        const GEO_BBOX_NWP = { south: 42.981, west: 5.498, north: 51.819, east: 22.102 };
+        const GEO_BBOX_NOWCAST = { south: 45.50288351657135, west: 8.098133748352293, north: 49.47817568460958, east: 17.742270413233744 };
+        const MAP_OVERLAYS = {
+            wind: {
+                label: "Wind 10m",
+                resource: "nwp-v1-1h-2500m",
+                params: ["u10m", "v10m"],
+                unit: "km/h",
+                min: 0,
+                max: 60,
+                opacity: 0.65,
+                colors: ["#38bdf8", "#22d3ee", "#facc15", "#fb923c", "#ef4444"],
+                crs: "EPSG:4326",
+                bounds: GEO_BBOX_NWP,
+                ttlMs: 20 * 60 * 1000,
+                padRatio: 0.24,
+                targetKey: "high",
+                value: (params, idx) => {
+                    const u = params.u10m?.data?.[idx];
+                    const v = params.v10m?.data?.[idx];
+                    if (u === null || v === null || u === undefined || v === undefined) return null;
+                    if (Number.isNaN(u) || Number.isNaN(v)) return null;
+                    return Math.sqrt(u * u + v * v) * 3.6;
+                },
+            },
+            precip: {
+                label: "Regen (acc)",
+                resource: "nwp-v1-1h-2500m",
+                params: ["rr_acc"],
+                unit: "mm",
+                min: 0,
+                max: 10,
+                opacity: 0.6,
+                colors: ["#0ea5e9", "#38bdf8", "#facc15", "#f97316", "#ef4444"],
+                crs: "EPSG:4326",
+                bounds: GEO_BBOX_NWP,
+                ttlMs: 20 * 60 * 1000,
+                padRatio: 0.24,
+                targetKey: "high",
+                value: (params, idx) => params.rr_acc?.data?.[idx] ?? null,
+            },
+            cloud: {
+                label: "Wolken",
+                resource: "nwp-v1-1h-2500m",
+                params: ["tcc"],
+                unit: "%",
+                min: 0,
+                max: 100,
+                opacity: 0.55,
+                colors: ["#0f172a", "#334155", "#94a3b8", "#e2e8f0"],
+                crs: "EPSG:4326",
+                bounds: GEO_BBOX_NWP,
+                ttlMs: 20 * 60 * 1000,
+                padRatio: 0.24,
+                targetKey: "high",
+                value: (params, idx) => {
+                    const raw = params.tcc?.data?.[idx];
+                    if (raw === null || raw === undefined) return null;
+                    return raw * 100;
+                },
+            },
+            nowcast: {
+                label: "Nowcast Regen",
+                resource: "nowcast-v1-15min-1km",
+                params: ["rr"],
+                unit: "mm",
+                min: 0,
+                max: 5,
+                opacity: 0.65,
+                colors: ["#0ea5e9", "#38bdf8", "#facc15", "#f97316", "#ef4444"],
+                crs: "EPSG:31287",
+                bounds: GEO_BBOX_NOWCAST,
+                ttlMs: 4 * 60 * 1000,
+                padRatio: 0.18,
+                targetKey: "mid",
+                value: (params, idx) => params.rr?.data?.[idx] ?? null,
+            },
+        };
         let thermikHoverState = null;
         let thermikRenderRaf = null;
         let thermikRenderTimer = null;
@@ -6849,6 +7098,7 @@
                     markerInstance.setLatLng([site.lat, site.lon]);
                     mapInstance.setView([site.lat, site.lon], Math.max(mapInstance.getZoom() || 9, 8));
                     setTimeout(() => mapInstance.invalidateSize(true), 200);
+                    scheduleMapOverlayUpdate(120);
                 }
 
                 // Keep a stored dataset stamp so we can later refresh only when new data is available.
@@ -7026,7 +7276,15 @@
             }
 
             if ((target === "paragliding" || target === "map") && mapInstance) {
-                setTimeout(() => mapInstance.invalidateSize(true), 200);
+                setTimeout(() => {
+                    mapInstance.invalidateSize(true);
+                    if (target === "map") scheduleMapOverlayUpdate(40, { keepIndex: true });
+                }, 200);
+            }
+            if (target === "map") {
+                scheduleMapOverlayUpdate(40, { keepIndex: true });
+            } else {
+                stopMapPlay();
             }
             if (target === "paragliding") {
                 scheduleThermikMatrixRender();
@@ -7036,6 +7294,384 @@
             scheduleViewportReflow(80);
         }
         window.showPage = showPage;
+
+        const clampBbox = (bbox, limits) => {
+            const south = clamp(bbox.south, limits.south, limits.north);
+            const north = clamp(bbox.north, limits.south, limits.north);
+            const west = clamp(bbox.west, limits.west, limits.east);
+            const east = clamp(bbox.east, limits.west, limits.east);
+            return { south, west, north, east };
+        };
+
+        const expandBbox = (bbox, ratio, limits) => {
+            const latPad = Math.max(0.02, (bbox.north - bbox.south) * ratio);
+            const lonPad = Math.max(0.02, (bbox.east - bbox.west) * ratio);
+            return clampBbox(
+                {
+                    south: bbox.south - latPad,
+                    west: bbox.west - lonPad,
+                    north: bbox.north + latPad,
+                    east: bbox.east + lonPad,
+                },
+                limits,
+            );
+        };
+
+        const bboxContains = (outer, inner) => {
+            if (!outer || !inner) return false;
+            return (
+                inner.south >= outer.south &&
+                inner.north <= outer.north &&
+                inner.west >= outer.west &&
+                inner.east <= outer.east
+            );
+        };
+
+        const toBboxString = (bbox) => `${bbox.south},${bbox.west},${bbox.north},${bbox.east}`;
+
+        const getMapViewBbox = () => {
+            if (!mapInstance) return null;
+            const bounds = mapInstance.getBounds();
+            return {
+                south: bounds.getSouth(),
+                west: bounds.getWest(),
+                north: bounds.getNorth(),
+                east: bounds.getEast(),
+            };
+        };
+
+        const pickNearestTimestampIndex = (timestamps, targetIso) => {
+            if (!Array.isArray(timestamps) || !timestamps.length) return 0;
+            const target = targetIso ? new Date(targetIso).getTime() : Date.now();
+            if (!Number.isFinite(target)) return pickCurrentIndex(timestamps);
+            let bestIdx = 0;
+            let bestDiff = Infinity;
+            for (let i = 0; i < timestamps.length; i += 1) {
+                const ts = timestamps[i];
+                const t = new Date(ts).getTime();
+                if (!Number.isFinite(t)) continue;
+                const diff = Math.abs(t - target);
+                if (diff < bestDiff) {
+                    bestDiff = diff;
+                    bestIdx = i;
+                }
+            }
+            return bestDiff === Infinity ? 0 : bestIdx;
+        };
+
+        const mapRenderTargetForConfig = (config, zoom) => {
+            const targetKey = config?.targetKey || "mid";
+            const base = MAP_RENDER_TARGET_POINTS[targetKey] || MAP_RENDER_TARGET_POINTS.mid;
+            if (zoom >= 11) return Math.round(base * 1.35);
+            if (zoom >= 9) return base;
+            if (zoom >= 7) return Math.round(base * 0.8);
+            return Math.round(base * 0.6);
+        };
+
+        const estimateGridStep = (values) => {
+            if (!Array.isArray(values) || values.length < 2) return null;
+            const sorted = Array.from(new Set(values)).sort((a, b) => a - b);
+            if (sorted.length < 2) return null;
+            const diffs = [];
+            for (let i = 1; i < sorted.length; i += 1) {
+                const diff = sorted[i] - sorted[i - 1];
+                if (diff > 0) diffs.push(diff);
+            }
+            if (!diffs.length) return null;
+            diffs.sort((a, b) => a - b);
+            return diffs[Math.floor(diffs.length / 2)];
+        };
+
+        const normalizeGeoCoords = (coords, preferredCrs) => {
+            if (!Array.isArray(coords) || coords.length < 2) return null;
+            const x = Number(coords[0]);
+            const y = Number(coords[1]);
+            if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+            const looksLonLat = Math.abs(x) <= 180 && Math.abs(y) <= 90;
+            if (looksLonLat) return { lon: x, lat: y };
+
+            const candidates = [];
+            if (preferredCrs) candidates.push(preferredCrs);
+            candidates.push("EPSG:31287", "EPSG:3857");
+            if (typeof proj4 === "function") {
+                for (const src of candidates) {
+                    if (!src || src === "EPSG:4326") continue;
+                    try {
+                        const ll = proj4(src, "EPSG:4326", [x, y]);
+                        const lon = Number(ll?.[0]);
+                        const lat = Number(ll?.[1]);
+                        if (Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lon) <= 180 && Math.abs(lat) <= 90) {
+                            return { lon, lat };
+                        }
+                    } catch {
+                        // try next CRS
+                    }
+                }
+            }
+            return null;
+        };
+
+        const setMapLegend = (config) => {
+            if (!mapLegend || !config) return;
+            const minLabel = `${Math.round(config.min)} ${config.unit}`;
+            const maxLabel = `${Math.round(config.max)} ${config.unit}`;
+            const midLabel = `${Math.round((config.min + config.max) / 2)} ${config.unit}`;
+            mapLegend.innerHTML = `
+                <div class="map-legend-title">${config.label}</div>
+                <div class="map-legend-bar" style="background: linear-gradient(90deg, ${config.colors.join(", ")});"></div>
+                <div class="map-legend-labels"><span>${minLabel}</span><span>${midLabel}</span><span>${maxLabel}</span></div>
+            `;
+        };
+
+        const setMapMeta = (config, timestamp, suffix = "") => {
+            if (!mapMeta || !config) return;
+            const timeLabel = timestamp ? formatLabel(timestamp) : "";
+            const suffixLabel = suffix ? ` · ${suffix}` : "";
+            mapMeta.textContent = timeLabel ? `${config.label} · ${timeLabel}${suffixLabel}` : `${config.label}${suffixLabel}`;
+        };
+
+        const syncMapTimeUi = () => {
+            const count = mapOverlayTimestamps.length;
+            const maxIdx = Math.max(0, count - 1);
+            mapOverlayIndex = clamp(mapOverlayIndex, 0, maxIdx);
+            if (mapTimeRange) {
+                mapTimeRange.min = "0";
+                mapTimeRange.max = String(maxIdx);
+                mapTimeRange.value = String(mapOverlayIndex);
+                mapTimeRange.disabled = count <= 1;
+            }
+            if (mapTimeLabel) {
+                const ts = mapOverlayTimestamps[mapOverlayIndex];
+                mapTimeLabel.textContent = ts ? formatLabel(ts) : "--";
+            }
+            if (mapPlayBtn) {
+                mapPlayBtn.disabled = count <= 1;
+                if (!mapPlayActive) mapPlayBtn.textContent = "Play";
+            }
+        };
+
+        const stopMapPlay = () => {
+            if (mapPlayTimer) {
+                clearInterval(mapPlayTimer);
+                mapPlayTimer = null;
+            }
+            mapPlayActive = false;
+            if (mapPlayBtn) mapPlayBtn.textContent = "Play";
+        };
+
+        const startMapPlay = () => {
+            if (mapPlayActive || mapOverlayTimestamps.length <= 1) return;
+            mapPlayActive = true;
+            if (mapPlayBtn) mapPlayBtn.textContent = "Pause";
+            mapPlayTimer = setInterval(() => {
+                if (!mapOverlayTimestamps.length) {
+                    stopMapPlay();
+                    return;
+                }
+                mapOverlayIndex = (mapOverlayIndex + 1) % mapOverlayTimestamps.length;
+                const cache = mapOverlayCache[mapOverlayKey];
+                if (!cache) {
+                    scheduleMapOverlayUpdate(0, { keepIndex: true });
+                    return;
+                }
+                drawMapOverlayFrame(cache, MAP_OVERLAYS[mapOverlayKey], mapOverlayIndex);
+            }, MAP_PLAY_INTERVAL_MS);
+        };
+
+        const fetchGeosphereGridForecast = async (resourceId, params, bbox) => {
+            const query = {
+                parameters: params,
+                bbox: toBboxString(bbox),
+                output_format: "geojson",
+            };
+            const url = buildUrl(`${GEO_BASE}/grid/forecast/${resourceId}`, query);
+            return fetchJson(url, FETCH_TIMEOUT_MS);
+        };
+
+        const buildOverlayCache = (data, fetchBounds, config) => {
+            const timestamps = Array.isArray(data?.timestamps) ? data.timestamps : [];
+            const features = Array.isArray(data?.features) ? data.features : [];
+            const points = [];
+            for (const feature of features) {
+                const ll = normalizeGeoCoords(feature?.geometry?.coordinates, config?.crs);
+                if (!ll) continue;
+                const params = feature?.properties?.parameters || {};
+                points.push({ lat: ll.lat, lon: ll.lon, params });
+            }
+            if (!points.length) return null;
+
+            const sampleStep = Math.max(1, Math.floor(points.length / 7000));
+            const sampleLats = [];
+            const sampleLons = [];
+            for (let i = 0; i < points.length; i += sampleStep) {
+                sampleLats.push(points[i].lat);
+                sampleLons.push(points[i].lon);
+            }
+            const latStep = estimateGridStep(sampleLats) || Math.max(0.01, (fetchBounds.north - fetchBounds.south) / Math.max(24, Math.sqrt(points.length)));
+            const lonStep = estimateGridStep(sampleLons) || Math.max(0.01, (fetchBounds.east - fetchBounds.west) / Math.max(24, Math.sqrt(points.length)));
+
+            return {
+                fetchedAt: Date.now(),
+                fetchBounds,
+                timestamps,
+                points,
+                latStep,
+                lonStep,
+                frameCache: new Map(),
+            };
+        };
+
+        const overlayViewSignature = () => {
+            if (!mapInstance) return "no-map";
+            const center = mapInstance.getCenter();
+            const zoom = mapInstance.getZoom();
+            const size = mapInstance.getSize();
+            return `${zoom}|${center.lat.toFixed(4)}|${center.lng.toFixed(4)}|${size.x}x${size.y}`;
+        };
+
+        const renderOverlayCanvas = (cache, config, timeIndex) => {
+            if (!mapInstance || !cache || !config) return null;
+            const size = mapInstance.getSize();
+            const canvas = document.createElement("canvas");
+            canvas.width = Math.max(1, Math.round(size.x));
+            canvas.height = Math.max(1, Math.round(size.y));
+            const ctx = canvas.getContext("2d");
+            if (!ctx) return null;
+
+            const center = mapInstance.getCenter();
+            const origin = mapInstance.latLngToContainerPoint([center.lat, center.lng]);
+            const dxPoint = mapInstance.latLngToContainerPoint([center.lat, center.lng + cache.lonStep]);
+            const dyPoint = mapInstance.latLngToContainerPoint([center.lat + cache.latStep, center.lng]);
+            const cellW = Math.max(1, Math.abs(dxPoint.x - origin.x));
+            const cellH = Math.max(1, Math.abs(dyPoint.y - origin.y));
+            const mapBounds = mapInstance.getBounds();
+            const south = mapBounds.getSouth();
+            const west = mapBounds.getWest();
+            const north = mapBounds.getNorth();
+            const east = mapBounds.getEast();
+            const padLat = cache.latStep * 1.5;
+            const padLon = cache.lonStep * 1.5;
+            const targetPoints = mapRenderTargetForConfig(config, mapInstance.getZoom());
+            const stride = Math.max(1, Math.ceil(cache.points.length / Math.max(2500, targetPoints)));
+            const offset = stride > 1 ? (timeIndex % stride) : 0;
+
+            ctx.globalAlpha = config.opacity;
+            for (let i = offset; i < cache.points.length; i += stride) {
+                const pt = cache.points[i];
+                if (!pt) continue;
+                if (pt.lat < south - padLat || pt.lat > north + padLat || pt.lon < west - padLon || pt.lon > east + padLon) continue;
+                const value = config.value(pt.params, timeIndex);
+                if (value === null || value === undefined || Number.isNaN(value)) continue;
+                const xy = mapInstance.latLngToContainerPoint([pt.lat, pt.lon]);
+                if (xy.x < -cellW || xy.x > size.x + cellW || xy.y < -cellH || xy.y > size.y + cellH) continue;
+                ctx.fillStyle = colorRamp(value, config.min, config.max, config.colors);
+                ctx.fillRect(xy.x - cellW / 2, xy.y - cellH / 2, cellW, cellH);
+            }
+            return canvas;
+        };
+
+        const drawMapOverlayFrame = (cache, config, index) => {
+            if (!mapInstance || !cache || !config) return false;
+            if (!Array.isArray(cache.timestamps) || !cache.timestamps.length) return false;
+            mapOverlayIndex = clamp(index, 0, cache.timestamps.length - 1);
+            mapOverlayTimestamps = cache.timestamps;
+            syncMapTimeUi();
+
+            const frameKey = `${overlayViewSignature()}|${mapOverlayIndex}`;
+            let imageUrl = cache.frameCache.get(frameKey);
+            if (!imageUrl) {
+                const canvas = renderOverlayCanvas(cache, config, mapOverlayIndex);
+                if (!canvas) return false;
+                try {
+                    imageUrl = canvas.toDataURL("image/webp", 0.84);
+                } catch {
+                    imageUrl = canvas.toDataURL();
+                }
+                cache.frameCache.set(frameKey, imageUrl);
+                while (cache.frameCache.size > MAP_FRAME_CACHE_LIMIT) {
+                    const firstKey = cache.frameCache.keys().next().value;
+                    cache.frameCache.delete(firstKey);
+                }
+            }
+
+            const view = mapInstance.getBounds();
+            const imageBounds = [[view.getSouth(), view.getWest()], [view.getNorth(), view.getEast()]];
+            if (mapOverlayLayer) mapInstance.removeLayer(mapOverlayLayer);
+            mapOverlayLayer = L.imageOverlay(imageUrl, imageBounds, { opacity: 1, interactive: false });
+            mapOverlayLayer.addTo(mapInstance);
+            setMapMeta(config, cache.timestamps[mapOverlayIndex]);
+            return true;
+        };
+
+        const updateMapOverlay = async (opts = {}) => {
+            if (!mapInstance) return;
+            if (!pageMap || !pageMap.classList.contains("active")) return;
+            const config = MAP_OVERLAYS[mapOverlayKey] || MAP_OVERLAYS.wind;
+            setMapLegend(config);
+            const limits = config.bounds || GEO_BBOX_NWP;
+            const viewBboxRaw = getMapViewBbox();
+            if (!viewBboxRaw) return;
+            const viewBbox = clampBbox(viewBboxRaw, limits);
+            const previousTs = mapOverlayTimestamps[mapOverlayIndex] || null;
+            const cached = mapOverlayCache[mapOverlayKey];
+            const isFresh = cached && (Date.now() - cached.fetchedAt) < (config.ttlMs || 10 * 60 * 1000);
+            const canReuse = isFresh && bboxContains(cached.fetchBounds, viewBbox);
+            const forceFetch = !!opts.forceFetch;
+            let layerCache = cached;
+
+            if (!canReuse || forceFetch) {
+                const reqId = ++mapOverlayRequestId;
+                const fetchBounds = expandBbox(viewBbox, config.padRatio ?? 0.2, limits);
+                try {
+                    setMapMeta(config, null, "lade...");
+                    const data = await fetchGeosphereGridForecast(config.resource, config.params, fetchBounds);
+                    if (reqId !== mapOverlayRequestId) return;
+                    const built = buildOverlayCache(data, fetchBounds, config);
+                    if (!built || !built.points.length || !built.timestamps.length) {
+                        stopMapPlay();
+                        mapOverlayTimestamps = [];
+                        syncMapTimeUi();
+                        if (mapOverlayLayer) {
+                            mapInstance.removeLayer(mapOverlayLayer);
+                            mapOverlayLayer = null;
+                        }
+                        setMapMeta(config, null, "keine Daten");
+                        return;
+                    }
+                    mapOverlayCache[mapOverlayKey] = built;
+                    layerCache = built;
+                } catch (err) {
+                    stopMapPlay();
+                    if (mapOverlayLayer) {
+                        mapInstance.removeLayer(mapOverlayLayer);
+                        mapOverlayLayer = null;
+                    }
+                    setMapMeta(config, null, "Fehler");
+                    return;
+                }
+            }
+
+            if (!layerCache) return;
+            mapOverlayTimestamps = layerCache.timestamps || [];
+            if (!mapOverlayTimestamps.length) {
+                stopMapPlay();
+                syncMapTimeUi();
+                return;
+            }
+            if (opts.keepIndex) {
+                mapOverlayIndex = clamp(mapOverlayIndex, 0, mapOverlayTimestamps.length - 1);
+            } else {
+                mapOverlayIndex = pickNearestTimestampIndex(mapOverlayTimestamps, previousTs) || pickCurrentIndex(mapOverlayTimestamps);
+            }
+            drawMapOverlayFrame(layerCache, config, mapOverlayIndex);
+        };
+
+        const scheduleMapOverlayUpdate = (delayMs = 180, opts = {}) => {
+            if (mapOverlayTimer) clearTimeout(mapOverlayTimer);
+            mapOverlayTimer = setTimeout(() => {
+                updateMapOverlay(opts);
+            }, Math.max(0, delayMs));
+        };
 
         function initMap() {
             if (typeof L === "undefined") {
@@ -7048,15 +7684,56 @@
             const site = sitesByName[currentSiteName] || siteMeta[0];
             const lat = site ? site.lat : 47.0;
             const lon = site ? site.lon : 13.0;
-            mapInstance = L.map("map").setView([lat, lon], 8);
+            mapInstance = L.map("map", { preferCanvas: true }).setView([lat, lon], 8);
             L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
                 maxZoom: 18,
                 attribution: "&copy; OpenStreetMap contributors",
             }).addTo(mapInstance);
             markerInstance = L.marker([lat, lon]).addTo(mapInstance);
-            setTimeout(() => mapInstance.invalidateSize(true), 200);
+            mapInstance.on("moveend", () => scheduleMapOverlayUpdate(150, { keepIndex: true }));
+            mapInstance.on("zoomend", () => scheduleMapOverlayUpdate(110, { keepIndex: true }));
+            setMapLegend(MAP_OVERLAYS[mapOverlayKey] || MAP_OVERLAYS.wind);
+            syncMapTimeUi();
+            scheduleMapOverlayUpdate(120);
+            setTimeout(() => {
+                mapInstance.invalidateSize(true);
+                scheduleMapOverlayUpdate(80, { keepIndex: true });
+            }, 200);
         }
         window.initMap = initMap;
+
+        if (mapLayerButtons.length) {
+            mapLayerButtons.forEach((btn) => {
+                btn.addEventListener("click", () => {
+                    const key = btn.dataset.layer;
+                    if (!key || !MAP_OVERLAYS[key]) return;
+                    if (key === mapOverlayKey) return;
+                    mapOverlayKey = key;
+                    mapLayerButtons.forEach((b) => b.classList.toggle("active", b === btn));
+                    stopMapPlay();
+                    setMapLegend(MAP_OVERLAYS[mapOverlayKey]);
+                    scheduleMapOverlayUpdate(0, { keepIndex: false });
+                });
+            });
+        }
+
+        if (mapTimeRange) {
+            mapTimeRange.addEventListener("input", () => {
+                const idx = Number(mapTimeRange.value);
+                if (!Number.isFinite(idx)) return;
+                mapOverlayIndex = idx;
+                const cache = mapOverlayCache[mapOverlayKey];
+                const config = MAP_OVERLAYS[mapOverlayKey] || MAP_OVERLAYS.wind;
+                if (cache) drawMapOverlayFrame(cache, config, mapOverlayIndex);
+            });
+        }
+
+        if (mapPlayBtn) {
+            mapPlayBtn.addEventListener("click", () => {
+                if (mapPlayActive) stopMapPlay();
+                else startMapPlay();
+            });
+        }
 
         if (customLocationBtn) {
             customLocationBtn.addEventListener("click", () => {
@@ -7263,3 +7940,4 @@
 </body>
 
 </html>
+
