@@ -2825,9 +2825,11 @@
                 ttlMs: 20 * 60 * 1000,
                 padRatio: 0.24,
                 targetKey: "high",
-                maxSpanLat: 3.8,
-                maxSpanLon: 5.2,
+                maxSpanLat: 2.4,
+                maxSpanLon: 3.4,
                 fetchTimeoutMs: 22000,
+                pastHours: 0.5,
+                futureHours: 10,
                 value: (params, idx) => {
                     const u = params.u10m?.data?.[idx];
                     const v = params.v10m?.data?.[idx];
@@ -2857,9 +2859,11 @@
                 ttlMs: 20 * 60 * 1000,
                 padRatio: 0.24,
                 targetKey: "high",
-                maxSpanLat: 3.8,
-                maxSpanLon: 5.2,
+                maxSpanLat: 2.4,
+                maxSpanLon: 3.4,
                 fetchTimeoutMs: 22000,
+                pastHours: 0.5,
+                futureHours: 10,
                 value: (params, idx) => params.rr_acc?.data?.[idx] ?? null,
             },
             cloud: {
@@ -2877,9 +2881,11 @@
                 ttlMs: 20 * 60 * 1000,
                 padRatio: 0.24,
                 targetKey: "high",
-                maxSpanLat: 3.8,
-                maxSpanLon: 5.2,
+                maxSpanLat: 2.4,
+                maxSpanLon: 3.4,
                 fetchTimeoutMs: 24000,
+                pastHours: 0.5,
+                futureHours: 10,
                 value: (params, idx) => {
                     const raw = params.tcc?.data?.[idx] ?? params.clct?.data?.[idx];
                     if (raw === null || raw === undefined) return null;
@@ -2900,9 +2906,11 @@
                 ttlMs: 4 * 60 * 1000,
                 padRatio: 0.18,
                 targetKey: "mid",
-                maxSpanLat: 2.7,
-                maxSpanLon: 3.7,
+                maxSpanLat: 1.6,
+                maxSpanLon: 2.2,
                 fetchTimeoutMs: 22000,
+                pastHours: 0.25,
+                futureHours: 3,
                 value: (params, idx) => params.rr?.data?.[idx] ?? null,
             },
         };
@@ -7516,12 +7524,14 @@
             }, MAP_PLAY_INTERVAL_MS);
         };
 
-        const fetchGeosphereGridForecast = async (resourceId, params, bbox, timeoutMs = FETCH_TIMEOUT_MS) => {
+        const fetchGeosphereGridForecast = async (resourceId, params, bbox, timeoutMs = FETCH_TIMEOUT_MS, startIso = null, endIso = null) => {
             const query = {
                 parameters: params,
                 bbox: toBboxString(bbox),
                 output_format: "geojson",
             };
+            if (startIso) query.start = startIso;
+            if (endIso) query.end = endIso;
             const url = buildUrl(`${GEO_BASE}/grid/forecast/${resourceId}`, query);
             return fetchJson(url, timeoutMs);
         };
@@ -7542,6 +7552,28 @@
             return features.length > 0 && timestamps.length > 0;
         };
 
+        const overlayTimeWindowCandidates = (config) => {
+            const nowMs = Date.now();
+            const pastH = Number.isFinite(config?.pastHours) ? config.pastHours : 0.5;
+            const futureH = Number.isFinite(config?.futureHours) ? config.futureHours : 10;
+            const windows = [];
+            const addWindow = (past, future) => {
+                const startIso = new Date(nowMs - Math.max(0, past) * 3600 * 1000).toISOString();
+                const endIso = new Date(nowMs + Math.max(0.5, future) * 3600 * 1000).toISOString();
+                windows.push({ startIso, endIso });
+            };
+            addWindow(pastH, futureH);
+            addWindow(Math.min(0.5, pastH), Math.max(1.5, futureH * 0.55));
+            addWindow(0, Math.max(1, futureH * 0.35));
+            const seen = new Set();
+            return windows.filter((w) => {
+                const key = `${w.startIso}|${w.endIso}`;
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+        };
+
         const fetchOverlayDataWithFallback = async (config, viewBbox, limits) => {
             const timeoutMs = Math.max(FETCH_TIMEOUT_MS, config.fetchTimeoutMs || FETCH_TIMEOUT_MS);
             const primaryBounds = limitBboxSpan(
@@ -7559,16 +7591,26 @@
             const boundCandidates = [primaryBounds];
             if (!bboxContains(primaryBounds, fallbackBounds)) boundCandidates.push(fallbackBounds);
             const paramSets = normalizeParamSets(config);
+            const timeWindows = overlayTimeWindowCandidates(config);
             let lastErr = null;
 
             for (const bounds of boundCandidates) {
                 for (const paramSet of paramSets) {
-                    try {
-                        const data = await fetchGeosphereGridForecast(config.resource, paramSet, bounds, timeoutMs);
-                        if (hasOverlayPayload(data)) return { data, fetchBounds: bounds, paramsUsed: paramSet };
-                        lastErr = new Error("overlay payload empty");
-                    } catch (err) {
-                        lastErr = err;
+                    for (const tw of timeWindows) {
+                        try {
+                            const data = await fetchGeosphereGridForecast(
+                                config.resource,
+                                paramSet,
+                                bounds,
+                                timeoutMs,
+                                tw.startIso,
+                                tw.endIso,
+                            );
+                            if (hasOverlayPayload(data)) return { data, fetchBounds: bounds, paramsUsed: paramSet };
+                            lastErr = new Error("overlay payload empty");
+                        } catch (err) {
+                            lastErr = err;
+                        }
                     }
                 }
             }
