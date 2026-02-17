@@ -2906,11 +2906,13 @@
                 ttlMs: 4 * 60 * 1000,
                 padRatio: 0.18,
                 targetKey: "mid",
-                maxSpanLat: 1.6,
-                maxSpanLon: 2.2,
+                maxSpanLat: 1.0,
+                maxSpanLon: 1.4,
                 fetchTimeoutMs: 22000,
-                pastHours: 0.25,
-                futureHours: 3,
+                pastHours: 0.15,
+                futureHours: 1.5,
+                maxTimeWindows: 1,
+                disableBoundFallback: true,
                 value: (params, idx) => params.rr?.data?.[idx] ?? null,
             },
         };
@@ -7373,6 +7375,15 @@
             );
         };
 
+        const bboxIntersects = (a, b) => {
+            if (!a || !b) return false;
+            if (a.east < b.west) return false;
+            if (a.west > b.east) return false;
+            if (a.north < b.south) return false;
+            if (a.south > b.north) return false;
+            return true;
+        };
+
         const toBboxString = (bbox) => `${bbox.south},${bbox.west},${bbox.north},${bbox.east}`;
 
         const getMapViewBbox = () => {
@@ -7589,9 +7600,11 @@
                 limits,
             );
             const boundCandidates = [primaryBounds];
-            if (!bboxContains(primaryBounds, fallbackBounds)) boundCandidates.push(fallbackBounds);
+            if (!config.disableBoundFallback && !bboxContains(primaryBounds, fallbackBounds)) boundCandidates.push(fallbackBounds);
             const paramSets = normalizeParamSets(config);
-            const timeWindows = overlayTimeWindowCandidates(config);
+            const maxWindows = Number.isFinite(config.maxTimeWindows) ? Math.max(1, Math.round(config.maxTimeWindows)) : null;
+            const timeWindowsAll = overlayTimeWindowCandidates(config);
+            const timeWindows = maxWindows ? timeWindowsAll.slice(0, maxWindows) : timeWindowsAll;
             let lastErr = null;
 
             for (const bounds of boundCandidates) {
@@ -7798,6 +7811,17 @@
             if (!viewBboxRaw) return;
             const viewBbox = clampBbox(viewBboxRaw, limits);
             const viewBboxLimited = limitBboxSpan(viewBbox, config.maxSpanLat, config.maxSpanLon, limits);
+            if (!bboxIntersects(viewBboxRaw, limits)) {
+                stopMapPlay();
+                mapOverlayTimestamps = [];
+                syncMapTimeUi();
+                if (mapOverlayLayer) {
+                    mapInstance.removeLayer(mapOverlayLayer);
+                    mapOverlayLayer = null;
+                }
+                setMapMeta(config, null, "außerhalb Gebiet");
+                return;
+            }
             const previousTs = mapOverlayTimestamps[mapOverlayIndex] || null;
             const cached = mapOverlayCache[mapOverlayKey];
             const isFresh = cached && (Date.now() - cached.fetchedAt) < (config.ttlMs || 10 * 60 * 1000);
