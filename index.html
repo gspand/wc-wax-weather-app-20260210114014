@@ -2866,6 +2866,8 @@
         let mapOverlayTimer = null;
         let mapOverlayRequestId = 0;
         let mapOverlayFetchController = null;
+        let mapOverlayPrefetchTimer = null;
+        let mapOverlayPrefetchRunning = false;
         let mapOverlayIndex = 0;
         let mapOverlayCache = {};
         let mapOverlayTimestamps = [];
@@ -7971,9 +7973,65 @@
             return true;
         };
 
+        const overlaySpanFactorForZoom = (zoom) => (
+            zoom >= 11 ? 1 : (zoom >= 9 ? 0.86 : (zoom >= 8 ? 0.72 : 0.58))
+        );
+
+        const limitOverlayViewBboxForConfig = (viewBbox, config, limits) => {
+            const zoom = mapInstance ? mapInstance.getZoom() : 8;
+            const spanFactor = overlaySpanFactorForZoom(zoom);
+            const viewMaxSpanLat = Number.isFinite(config.maxSpanLat) ? config.maxSpanLat * spanFactor : null;
+            const viewMaxSpanLon = Number.isFinite(config.maxSpanLon) ? config.maxSpanLon * spanFactor : null;
+            return limitBboxSpan(viewBbox, viewMaxSpanLat, viewMaxSpanLon, limits);
+        };
+
+        const prefetchOtherMapOverlays = async (viewBboxRaw, activeKey) => {
+            if (mapOverlayPrefetchRunning) return;
+            if (!viewBboxRaw) return;
+            mapOverlayPrefetchRunning = true;
+            try {
+                for (const key of Object.keys(MAP_OVERLAYS)) {
+                    if (key === activeKey) continue;
+                    if (mapOverlayFetchController) break;
+                    const config = MAP_OVERLAYS[key];
+                    if (!config) continue;
+                    const limits = config.bounds || GEO_BBOX_NWP;
+                    if (!bboxIntersects(viewBboxRaw, limits)) continue;
+                    const clampedView = clampBbox(viewBboxRaw, limits);
+                    const viewBboxLimited = limitOverlayViewBboxForConfig(clampedView, config, limits);
+                    const cached = mapOverlayCache[key];
+                    const isFresh = cached && (Date.now() - cached.fetchedAt) < (config.ttlMs || 10 * 60 * 1000);
+                    if (isFresh && bboxContains(cached.fetchBounds, viewBboxLimited)) continue;
+                    try {
+                        const fetched = await fetchOverlayDataWithFallback(config, viewBboxLimited, limits, null);
+                        const built = buildOverlayCache(fetched.data, fetched.fetchBounds, config);
+                        if (!built || !built.points.length || !built.timestamps.length) continue;
+                        built.legendMeta = formatOverlayLegendMeta(built);
+                        mapOverlayCache[key] = built;
+                    } catch {
+                        // prefetch should never block active interaction
+                    }
+                }
+            } finally {
+                mapOverlayPrefetchRunning = false;
+            }
+        };
+
+        const scheduleMapOverlayPrefetch = (viewBboxRaw, activeKey) => {
+            if (mapOverlayPrefetchTimer) clearTimeout(mapOverlayPrefetchTimer);
+            if (!viewBboxRaw) return;
+            mapOverlayPrefetchTimer = setTimeout(() => {
+                prefetchOtherMapOverlays(viewBboxRaw, activeKey);
+            }, 700);
+        };
+
         const updateMapOverlay = async (opts = {}) => {
             if (!mapInstance) return;
             if (!pageMap || !pageMap.classList.contains("active")) {
+                if (mapOverlayPrefetchTimer) {
+                    clearTimeout(mapOverlayPrefetchTimer);
+                    mapOverlayPrefetchTimer = null;
+                }
                 if (mapOverlayFetchController) {
                     mapOverlayFetchController.abort();
                     mapOverlayFetchController = null;
@@ -7986,12 +8044,12 @@
             const viewBboxRaw = getMapViewBbox();
             if (!viewBboxRaw) return;
             const viewBbox = clampBbox(viewBboxRaw, limits);
-            const zoom = mapInstance.getZoom();
-            const spanFactor = zoom >= 11 ? 1 : (zoom >= 9 ? 0.86 : (zoom >= 8 ? 0.72 : 0.58));
-            const viewMaxSpanLat = Number.isFinite(config.maxSpanLat) ? config.maxSpanLat * spanFactor : null;
-            const viewMaxSpanLon = Number.isFinite(config.maxSpanLon) ? config.maxSpanLon * spanFactor : null;
-            const viewBboxLimited = limitBboxSpan(viewBbox, viewMaxSpanLat, viewMaxSpanLon, limits);
+            const viewBboxLimited = limitOverlayViewBboxForConfig(viewBbox, config, limits);
             if (!bboxIntersects(viewBboxRaw, limits)) {
+                if (mapOverlayPrefetchTimer) {
+                    clearTimeout(mapOverlayPrefetchTimer);
+                    mapOverlayPrefetchTimer = null;
+                }
                 if (mapOverlayFetchController) {
                     mapOverlayFetchController.abort();
                     mapOverlayFetchController = null;
@@ -8087,6 +8145,7 @@
             mapOverlayLegendMeta = layerCache.legendMeta || formatOverlayLegendMeta(layerCache);
             setMapLegend(config, mapOverlayLegendMeta);
             drawMapOverlayFrame(layerCache, config, mapOverlayIndex);
+            scheduleMapOverlayPrefetch(viewBboxRaw, mapOverlayKey);
         };
 
         const scheduleMapOverlayUpdate = (delayMs = 180, opts = {}) => {
@@ -8134,6 +8193,10 @@
                     if (mapOverlayFetchController) {
                         mapOverlayFetchController.abort();
                         mapOverlayFetchController = null;
+                    }
+                    if (mapOverlayPrefetchTimer) {
+                        clearTimeout(mapOverlayPrefetchTimer);
+                        mapOverlayPrefetchTimer = null;
                     }
                     mapOverlayKey = key;
                     mapOverlayLegendMeta = "";
