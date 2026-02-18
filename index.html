@@ -707,10 +707,34 @@
         .map-panel {
             min-height: 420px;
             position: relative;
+            overflow: hidden;
         }
 
         .map-panel.map-panel-full {
             min-height: 520px;
+        }
+
+        .map-panel::before {
+            content: "";
+            position: absolute;
+            inset: -1px;
+            border-radius: calc(var(--radius) + 1px);
+            border: 1px solid rgba(125, 211, 252, 0.22);
+            box-shadow: inset 0 0 0 1px rgba(14, 165, 233, 0.06), 0 22px 44px rgba(4, 10, 20, 0.48);
+            pointer-events: none;
+            z-index: 2;
+        }
+
+        .map-panel::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background:
+                radial-gradient(520px 300px at 12% 8%, rgba(56, 189, 248, 0.08), transparent 64%),
+                radial-gradient(420px 260px at 85% 86%, rgba(34, 211, 238, 0.08), transparent 64%),
+                linear-gradient(180deg, rgba(2, 6, 12, 0) 62%, rgba(2, 6, 12, 0.2) 100%);
+            pointer-events: none;
+            z-index: 1;
         }
 
         .map-toolbar {
@@ -757,6 +781,38 @@
             font-size: 12px;
             letter-spacing: 0.08em;
             text-transform: uppercase;
+            min-height: 16px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .map-meta.loading {
+            color: #7dd3fc;
+        }
+
+        .map-meta.loading::before {
+            content: "";
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            border: 1.5px solid rgba(125, 211, 252, 0.45);
+            border-top-color: rgba(186, 230, 253, 0.96);
+            animation: mapSpin 0.9s linear infinite;
+        }
+
+        .map-meta.error {
+            color: #fb7185;
+        }
+
+        @keyframes mapSpin {
+            from {
+                transform: rotate(0deg);
+            }
+
+            to {
+                transform: rotate(360deg);
+            }
         }
 
         .map-time {
@@ -815,6 +871,7 @@
             box-shadow: 0 14px 28px rgba(4, 10, 20, 0.45);
             backdrop-filter: blur(8px);
             min-width: 160px;
+            z-index: 3;
         }
 
         .map-legend-title {
@@ -836,6 +893,14 @@
             justify-content: space-between;
             font-size: 11px;
             color: var(--muted);
+        }
+
+        .map-legend-meta {
+            margin-top: 6px;
+            font-size: 10px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: rgba(216, 228, 242, 0.66);
         }
 
         .panel {
@@ -2800,9 +2865,11 @@
         let mapOverlayKey = "wind";
         let mapOverlayTimer = null;
         let mapOverlayRequestId = 0;
+        let mapOverlayFetchController = null;
         let mapOverlayIndex = 0;
         let mapOverlayCache = {};
         let mapOverlayTimestamps = [];
+        let mapOverlayLegendMeta = "";
         let mapPlayTimer = null;
         let mapPlayActive = false;
         const MAP_PLAY_INTERVAL_MS = 850;
@@ -2823,13 +2890,15 @@
                 crs: "EPSG:4326",
                 bounds: GEO_BBOX_NWP,
                 ttlMs: 20 * 60 * 1000,
-                padRatio: 0.24,
+                padRatio: 0.18,
                 targetKey: "high",
                 maxSpanLat: 2.4,
                 maxSpanLon: 3.4,
-                fetchTimeoutMs: 22000,
-                pastHours: 0.5,
-                futureHours: 10,
+                fetchTimeoutMs: 12000,
+                pastHours: 0.35,
+                futureHours: 8,
+                maxTimeWindows: 2,
+                maxAttempts: 3,
                 value: (params, idx) => {
                     const u = params.u10m?.data?.[idx];
                     const v = params.v10m?.data?.[idx];
@@ -2857,20 +2926,22 @@
                 crs: "EPSG:4326",
                 bounds: GEO_BBOX_NWP,
                 ttlMs: 20 * 60 * 1000,
-                padRatio: 0.24,
+                padRatio: 0.18,
                 targetKey: "high",
                 maxSpanLat: 2.4,
                 maxSpanLon: 3.4,
-                fetchTimeoutMs: 22000,
-                pastHours: 0.5,
-                futureHours: 10,
+                fetchTimeoutMs: 12000,
+                pastHours: 0.35,
+                futureHours: 8,
+                maxTimeWindows: 2,
+                maxAttempts: 3,
                 value: (params, idx) => params.rr_acc?.data?.[idx] ?? null,
             },
             cloud: {
                 label: "Wolken",
                 resource: "nwp-v1-1h-2500m",
                 params: ["tcc"],
-                paramCandidates: [["tcc"], ["clct"]],
+                paramCandidates: [["tcc"]],
                 unit: "%",
                 min: 0,
                 max: 100,
@@ -2879,13 +2950,15 @@
                 crs: "EPSG:4326",
                 bounds: GEO_BBOX_NWP,
                 ttlMs: 20 * 60 * 1000,
-                padRatio: 0.24,
+                padRatio: 0.18,
                 targetKey: "high",
                 maxSpanLat: 2.4,
                 maxSpanLon: 3.4,
-                fetchTimeoutMs: 24000,
-                pastHours: 0.5,
-                futureHours: 10,
+                fetchTimeoutMs: 12000,
+                pastHours: 0.35,
+                futureHours: 8,
+                maxTimeWindows: 2,
+                maxAttempts: 3,
                 value: (params, idx) => {
                     const raw = params.tcc?.data?.[idx] ?? params.clct?.data?.[idx];
                     if (raw === null || raw === undefined) return null;
@@ -2904,14 +2977,15 @@
                 crs: "EPSG:31287",
                 bounds: GEO_BBOX_NOWCAST,
                 ttlMs: 4 * 60 * 1000,
-                padRatio: 0.18,
+                padRatio: 0.12,
                 targetKey: "mid",
                 maxSpanLat: 1.0,
                 maxSpanLon: 1.4,
-                fetchTimeoutMs: 22000,
+                fetchTimeoutMs: 10000,
                 pastHours: 0.15,
-                futureHours: 1.5,
+                futureHours: 1.25,
                 maxTimeWindows: 1,
+                maxAttempts: 2,
                 disableBoundFallback: true,
                 value: (params, idx) => params.rr?.data?.[idx] ?? null,
             },
@@ -3339,26 +3413,38 @@
         const cacheKey = (kind, site, tag) => `${kind}:${site.lat.toFixed(3)}:${site.lon.toFixed(3)}:${tag}`;
         const cacheKeyGeneric = (kind, tag) => `${kind}:${tag}`;
         const FETCH_TIMEOUT_MS = 15000;
-        const fetchWithTimeout = async (url, timeoutMs = FETCH_TIMEOUT_MS) => {
+        const fetchWithTimeout = async (url, timeoutMs = FETCH_TIMEOUT_MS, fetchOptions = null) => {
             const controller = new AbortController();
+            const sourceSignal = fetchOptions?.signal;
+            const relayAbort = () => controller.abort();
+            if (sourceSignal) {
+                if (sourceSignal.aborted) controller.abort();
+                else sourceSignal.addEventListener("abort", relayAbort, { once: true });
+            }
             const id = setTimeout(() => controller.abort(), timeoutMs);
             try {
-                return await fetch(url, { signal: controller.signal });
+                const requestOptions = fetchOptions ? { ...fetchOptions, signal: controller.signal } : { signal: controller.signal };
+                return await fetch(url, requestOptions);
             } finally {
                 clearTimeout(id);
+                if (sourceSignal) sourceSignal.removeEventListener("abort", relayAbort);
             }
         };
-        const fetchJson = async (url, timeoutMs) => {
-            const res = await fetchWithTimeout(url, timeoutMs);
+        const fetchJson = async (url, timeoutMs, fetchOptions = null) => {
+            const res = await fetchWithTimeout(url, timeoutMs, fetchOptions);
             if (!res.ok) {
-                throw new Error(`Request failed (${res.status})`);
+                const err = new Error(`Request failed (${res.status})`);
+                err.status = res.status;
+                throw err;
             }
             return res.json();
         };
-        const fetchText = async (url, timeoutMs) => {
-            const res = await fetchWithTimeout(url, timeoutMs);
+        const fetchText = async (url, timeoutMs, fetchOptions = null) => {
+            const res = await fetchWithTimeout(url, timeoutMs, fetchOptions);
             if (!res.ok) {
-                throw new Error(`Request failed (${res.status})`);
+                const err = new Error(`Request failed (${res.status})`);
+                err.status = res.status;
+                throw err;
             }
             return res.text();
         };
@@ -7425,6 +7511,17 @@
             return Math.round(base * 0.6);
         };
 
+        const mapRenderScaleForConfig = (config, zoom) => {
+            const targetKey = config?.targetKey || "mid";
+            let scale = 0.82;
+            if (zoom >= 11) scale = 1;
+            else if (zoom >= 9) scale = 0.92;
+            else if (zoom >= 7) scale = 0.84;
+            if (targetKey === "high") scale += 0.03;
+            if (targetKey === "low") scale -= 0.05;
+            return Math.max(0.62, Math.min(1, scale));
+        };
+
         const estimateGridStep = (values) => {
             if (!Array.isArray(values) || values.length < 2) return null;
             const sorted = Array.from(new Set(values)).sort((a, b) => a - b);
@@ -7468,23 +7565,38 @@
             return null;
         };
 
-        const setMapLegend = (config) => {
+        const formatOverlayLegendMeta = (cache, fetchMs = null) => {
+            if (!cache) return "";
+            const points = Array.isArray(cache.points) ? cache.points.length : 0;
+            const frames = Array.isArray(cache.timestamps) ? cache.timestamps.length : 0;
+            const parts = [];
+            if (points > 0) parts.push(`${points.toLocaleString("de-AT")} Punkte`);
+            if (frames > 0) parts.push(`${frames} Frames`);
+            if (Number.isFinite(fetchMs) && fetchMs > 0) parts.push(`${Math.round(fetchMs)} ms`);
+            return parts.join(" · ");
+        };
+
+        const setMapLegend = (config, metaText = "") => {
             if (!mapLegend || !config) return;
             const minLabel = `${Math.round(config.min)} ${config.unit}`;
             const maxLabel = `${Math.round(config.max)} ${config.unit}`;
             const midLabel = `${Math.round((config.min + config.max) / 2)} ${config.unit}`;
+            const overlayMeta = metaText || mapOverlayLegendMeta || "";
             mapLegend.innerHTML = `
                 <div class="map-legend-title">${config.label}</div>
                 <div class="map-legend-bar" style="background: linear-gradient(90deg, ${config.colors.join(", ")});"></div>
                 <div class="map-legend-labels"><span>${minLabel}</span><span>${midLabel}</span><span>${maxLabel}</span></div>
+                <div class="map-legend-meta">${overlayMeta || "&nbsp;"}</div>
             `;
         };
 
-        const setMapMeta = (config, timestamp, suffix = "") => {
+        const setMapMeta = (config, timestamp, suffix = "", state = "ok") => {
             if (!mapMeta || !config) return;
             const timeLabel = timestamp ? formatLabel(timestamp) : "";
-            const suffixLabel = suffix ? ` \u00b7 ${suffix}` : "";
-            mapMeta.textContent = timeLabel ? `${config.label} \u00b7 ${timeLabel}${suffixLabel}` : `${config.label}${suffixLabel}`;
+            const suffixLabel = suffix ? ` · ${suffix}` : "";
+            mapMeta.textContent = timeLabel ? `${config.label} · ${timeLabel}${suffixLabel}` : `${config.label}${suffixLabel}`;
+            mapMeta.classList.toggle("loading", state === "loading");
+            mapMeta.classList.toggle("error", state === "error");
         };
 
         const syncMapTimeUi = () => {
@@ -7535,7 +7647,15 @@
             }, MAP_PLAY_INTERVAL_MS);
         };
 
-        const fetchGeosphereGridForecast = async (resourceId, params, bbox, timeoutMs = FETCH_TIMEOUT_MS, startIso = null, endIso = null) => {
+        const fetchGeosphereGridForecast = async (
+            resourceId,
+            params,
+            bbox,
+            timeoutMs = FETCH_TIMEOUT_MS,
+            startIso = null,
+            endIso = null,
+            signal = null,
+        ) => {
             const query = {
                 parameters: params,
                 bbox: toBboxString(bbox),
@@ -7544,7 +7664,7 @@
             if (startIso) query.start = startIso;
             if (endIso) query.end = endIso;
             const url = buildUrl(`${GEO_BASE}/grid/forecast/${resourceId}`, query);
-            return fetchJson(url, timeoutMs);
+            return fetchJson(url, timeoutMs, signal ? { signal } : null);
         };
 
         const normalizeParamSets = (config) => {
@@ -7563,6 +7683,13 @@
             return features.length > 0 && timestamps.length > 0;
         };
 
+        const isAbortError = (err) => {
+            if (!err) return false;
+            if (err.name === "AbortError") return true;
+            const msg = typeof err.message === "string" ? err.message : "";
+            return /abort|aborted/i.test(msg);
+        };
+
         const overlayTimeWindowCandidates = (config) => {
             const nowMs = Date.now();
             const pastH = Number.isFinite(config?.pastHours) ? config.pastHours : 0.5;
@@ -7573,9 +7700,9 @@
                 const endIso = new Date(nowMs + Math.max(0.5, future) * 3600 * 1000).toISOString();
                 windows.push({ startIso, endIso });
             };
-            addWindow(pastH, futureH);
+            addWindow(Math.min(0.35, pastH), Math.max(1, futureH * 0.35));
             addWindow(Math.min(0.5, pastH), Math.max(1.5, futureH * 0.55));
-            addWindow(0, Math.max(1, futureH * 0.35));
+            addWindow(pastH, futureH);
             const seen = new Set();
             return windows.filter((w) => {
                 const key = `${w.startIso}|${w.endIso}`;
@@ -7585,10 +7712,14 @@
             });
         };
 
-        const fetchOverlayDataWithFallback = async (config, viewBbox, limits) => {
-            const timeoutMs = Math.max(FETCH_TIMEOUT_MS, config.fetchTimeoutMs || FETCH_TIMEOUT_MS);
+        const fetchOverlayDataWithFallback = async (config, viewBbox, limits, signal = null) => {
+            const timeoutMs = Number.isFinite(config.fetchTimeoutMs) ? config.fetchTimeoutMs : FETCH_TIMEOUT_MS;
+            const zoom = mapInstance ? mapInstance.getZoom() : 8;
+            const basePad = Number.isFinite(config.padRatio) ? config.padRatio : 0.2;
+            const zoomFactor = zoom >= 11 ? 0.78 : (zoom >= 9 ? 0.88 : 1);
+            const effectivePad = Math.max(0.08, Math.min(0.3, basePad * zoomFactor));
             const primaryBounds = limitBboxSpan(
-                expandBbox(viewBbox, config.padRatio ?? 0.2, limits),
+                expandBbox(viewBbox, effectivePad, limits),
                 config.maxSpanLat,
                 config.maxSpanLon,
                 limits,
@@ -7602,14 +7733,22 @@
             const boundCandidates = [primaryBounds];
             if (!config.disableBoundFallback && !bboxContains(primaryBounds, fallbackBounds)) boundCandidates.push(fallbackBounds);
             const paramSets = normalizeParamSets(config);
-            const maxWindows = Number.isFinite(config.maxTimeWindows) ? Math.max(1, Math.round(config.maxTimeWindows)) : null;
+            const defaultWindows = config.resource === "nowcast-v1-15min-1km" ? 1 : 2;
+            const maxWindows = Number.isFinite(config.maxTimeWindows)
+                ? Math.max(1, Math.round(config.maxTimeWindows))
+                : defaultWindows;
             const timeWindowsAll = overlayTimeWindowCandidates(config);
-            const timeWindows = maxWindows ? timeWindowsAll.slice(0, maxWindows) : timeWindowsAll;
+            const timeWindows = timeWindowsAll.slice(0, maxWindows);
+            const maxAttempts = Number.isFinite(config.maxAttempts) ? Math.max(1, Math.round(config.maxAttempts)) : 4;
             let lastErr = null;
+            let attempts = 0;
 
             for (const bounds of boundCandidates) {
                 for (const paramSet of paramSets) {
                     for (const tw of timeWindows) {
+                        if (attempts >= maxAttempts) break;
+                        attempts += 1;
+                        if (signal?.aborted) throw new Error("overlay request aborted");
                         try {
                             const data = await fetchGeosphereGridForecast(
                                 config.resource,
@@ -7618,14 +7757,18 @@
                                 timeoutMs,
                                 tw.startIso,
                                 tw.endIso,
+                                signal,
                             );
                             if (hasOverlayPayload(data)) return { data, fetchBounds: bounds, paramsUsed: paramSet };
                             lastErr = new Error("overlay payload empty");
                         } catch (err) {
+                            if (isAbortError(err) || signal?.aborted) throw err;
                             lastErr = err;
                         }
                     }
+                    if (attempts >= maxAttempts) break;
                 }
+                if (attempts >= maxAttempts) break;
             }
             throw lastErr || new Error("overlay fetch failed");
         };
@@ -7668,7 +7811,7 @@
             const center = mapInstance.getCenter();
             const zoom = mapInstance.getZoom();
             const size = mapInstance.getSize();
-            return `${zoom}|${center.lat.toFixed(4)}|${center.lng.toFixed(4)}|${size.x}x${size.y}`;
+            return `${zoom}|${center.lat.toFixed(3)}|${center.lng.toFixed(3)}|${size.x}x${size.y}`;
         };
 
         const drawMapWindArrow = (ctx, x, y, u, v, length) => {
@@ -7704,9 +7847,11 @@
         const renderOverlayCanvas = (cache, config, timeIndex) => {
             if (!mapInstance || !cache || !config) return null;
             const size = mapInstance.getSize();
+            const zoom = mapInstance.getZoom();
+            const renderScale = mapRenderScaleForConfig(config, zoom);
             const canvas = document.createElement("canvas");
-            canvas.width = Math.max(1, Math.round(size.x));
-            canvas.height = Math.max(1, Math.round(size.y));
+            canvas.width = Math.max(1, Math.round(size.x * renderScale));
+            canvas.height = Math.max(1, Math.round(size.y * renderScale));
             const ctx = canvas.getContext("2d");
             if (!ctx) return null;
 
@@ -7723,7 +7868,7 @@
             const east = mapBounds.getEast();
             const padLat = cache.latStep * 1.5;
             const padLon = cache.lonStep * 1.5;
-            const targetPoints = mapRenderTargetForConfig(config, mapInstance.getZoom());
+            const targetPoints = mapRenderTargetForConfig(config, zoom);
             const stride = Math.max(1, Math.ceil(cache.points.length / Math.max(2500, targetPoints)));
             const offset = stride > 1 ? (timeIndex % stride) : 0;
 
@@ -7737,14 +7882,19 @@
                 const xy = mapInstance.latLngToContainerPoint([pt.lat, pt.lon]);
                 if (xy.x < -cellW || xy.x > size.x + cellW || xy.y < -cellH || xy.y > size.y + cellH) continue;
                 ctx.fillStyle = colorRamp(value, config.min, config.max, config.colors);
-                ctx.fillRect(xy.x - cellW / 2, xy.y - cellH / 2, cellW, cellH);
+                ctx.fillRect(
+                    (xy.x - cellW / 2) * renderScale,
+                    (xy.y - cellH / 2) * renderScale,
+                    Math.max(1, cellW * renderScale),
+                    Math.max(1, cellH * renderScale),
+                );
             }
 
             if (typeof config.vector === "function") {
                 const arrowTarget = Math.max(450, Math.round(targetPoints * 0.08));
                 const arrowStride = Math.max(stride, Math.ceil(cache.points.length / arrowTarget));
                 const arrowOffset = arrowStride > 1 ? ((timeIndex * 3) % arrowStride) : 0;
-                const bucketSize = 28;
+                const bucketSize = Math.max(14, Math.round(28 * renderScale));
                 const occupied = new Set();
                 for (let i = arrowOffset; i < cache.points.length; i += arrowStride) {
                     const pt = cache.points[i];
@@ -7756,13 +7906,15 @@
                     if (!Number.isFinite(speed) || speed < 0.8) continue;
                     const xy = mapInstance.latLngToContainerPoint([pt.lat, pt.lon]);
                     if (xy.x < -cellW || xy.x > size.x + cellW || xy.y < -cellH || xy.y > size.y + cellH) continue;
-                    const bx = Math.round(xy.x / bucketSize);
-                    const by = Math.round(xy.y / bucketSize);
+                    const scaledX = xy.x * renderScale;
+                    const scaledY = xy.y * renderScale;
+                    const bx = Math.round(scaledX / bucketSize);
+                    const by = Math.round(scaledY / bucketSize);
                     const bucketKey = `${bx}:${by}`;
                     if (occupied.has(bucketKey)) continue;
                     occupied.add(bucketKey);
-                    const length = clamp(6 + speed * 0.9, 6, 14);
-                    drawMapWindArrow(ctx, xy.x, xy.y, vec.u, vec.v, length);
+                    const length = clamp(6 + speed * 0.9, 6, 14) * renderScale;
+                    drawMapWindArrow(ctx, scaledX, scaledY, vec.u, vec.v, Math.max(4, length));
                 }
             }
             return canvas;
@@ -7794,32 +7946,49 @@
 
             const view = mapInstance.getBounds();
             const imageBounds = [[view.getSouth(), view.getWest()], [view.getNorth(), view.getEast()]];
-            if (mapOverlayLayer) mapInstance.removeLayer(mapOverlayLayer);
-            mapOverlayLayer = L.imageOverlay(imageUrl, imageBounds, { opacity: 1, interactive: false });
-            mapOverlayLayer.addTo(mapInstance);
+            if (mapOverlayLayer && typeof mapOverlayLayer.setUrl === "function") {
+                mapOverlayLayer.setUrl(imageUrl);
+                if (typeof mapOverlayLayer.setBounds === "function") mapOverlayLayer.setBounds(imageBounds);
+            } else {
+                if (mapOverlayLayer) mapInstance.removeLayer(mapOverlayLayer);
+                mapOverlayLayer = L.imageOverlay(imageUrl, imageBounds, { opacity: 1, interactive: false });
+                mapOverlayLayer.addTo(mapInstance);
+            }
             setMapMeta(config, cache.timestamps[mapOverlayIndex]);
             return true;
         };
 
         const updateMapOverlay = async (opts = {}) => {
             if (!mapInstance) return;
-            if (!pageMap || !pageMap.classList.contains("active")) return;
+            if (!pageMap || !pageMap.classList.contains("active")) {
+                if (mapOverlayFetchController) {
+                    mapOverlayFetchController.abort();
+                    mapOverlayFetchController = null;
+                }
+                return;
+            }
             const config = MAP_OVERLAYS[mapOverlayKey] || MAP_OVERLAYS.wind;
-            setMapLegend(config);
+            setMapLegend(config, mapOverlayLegendMeta);
             const limits = config.bounds || GEO_BBOX_NWP;
             const viewBboxRaw = getMapViewBbox();
             if (!viewBboxRaw) return;
             const viewBbox = clampBbox(viewBboxRaw, limits);
             const viewBboxLimited = limitBboxSpan(viewBbox, config.maxSpanLat, config.maxSpanLon, limits);
             if (!bboxIntersects(viewBboxRaw, limits)) {
+                if (mapOverlayFetchController) {
+                    mapOverlayFetchController.abort();
+                    mapOverlayFetchController = null;
+                }
                 stopMapPlay();
+                mapOverlayLegendMeta = "";
                 mapOverlayTimestamps = [];
                 syncMapTimeUi();
                 if (mapOverlayLayer) {
                     mapInstance.removeLayer(mapOverlayLayer);
                     mapOverlayLayer = null;
                 }
-                setMapMeta(config, null, "außerhalb Gebiet");
+                setMapLegend(config, "");
+                setMapMeta(config, null, "ausserhalb Gebiet");
                 return;
             }
             const previousTs = mapOverlayTimestamps[mapOverlayIndex] || null;
@@ -7828,37 +7997,61 @@
             const canReuse = isFresh && bboxContains(cached.fetchBounds, viewBboxLimited);
             const forceFetch = !!opts.forceFetch;
             let layerCache = cached;
+            if (canReuse && mapOverlayFetchController) {
+                mapOverlayFetchController.abort();
+                mapOverlayFetchController = null;
+            }
 
             if (!canReuse || forceFetch) {
                 const reqId = ++mapOverlayRequestId;
+                if (mapOverlayFetchController) mapOverlayFetchController.abort();
+                const controller = new AbortController();
+                mapOverlayFetchController = controller;
+                const startTick = (typeof performance !== "undefined" && typeof performance.now === "function")
+                    ? performance.now()
+                    : Date.now();
                 try {
-                    setMapMeta(config, null, "lade...");
-                    const fetched = await fetchOverlayDataWithFallback(config, viewBboxLimited, limits);
+                    setMapMeta(config, null, "lade...", "loading");
+                    const fetched = await fetchOverlayDataWithFallback(config, viewBboxLimited, limits, controller.signal);
                     if (reqId !== mapOverlayRequestId) return;
                     const built = buildOverlayCache(fetched.data, fetched.fetchBounds, config);
                     if (!built || !built.points.length || !built.timestamps.length) {
                         stopMapPlay();
+                        mapOverlayLegendMeta = "";
                         mapOverlayTimestamps = [];
                         syncMapTimeUi();
                         if (mapOverlayLayer) {
                             mapInstance.removeLayer(mapOverlayLayer);
                             mapOverlayLayer = null;
                         }
+                        setMapLegend(config, "");
                         setMapMeta(config, null, "keine Daten");
                         return;
                     }
+                    const endTick = (typeof performance !== "undefined" && typeof performance.now === "function")
+                        ? performance.now()
+                        : Date.now();
+                    built.legendMeta = formatOverlayLegendMeta(built, endTick - startTick);
                     mapOverlayCache[mapOverlayKey] = built;
                     layerCache = built;
+                    mapOverlayLegendMeta = built.legendMeta || "";
+                    setMapLegend(config, mapOverlayLegendMeta);
                 } catch (err) {
+                    if (reqId !== mapOverlayRequestId) return;
+                    if (isAbortError(err)) return;
                     stopMapPlay();
                     if (mapOverlayLayer) {
                         mapInstance.removeLayer(mapOverlayLayer);
                         mapOverlayLayer = null;
                     }
                     const reason = typeof err?.message === "string" && err.message ? err.message : "unbekannt";
-                    if (/timed out|abort|aborted/i.test(reason)) setMapMeta(config, null, "Timeout");
-                    else setMapMeta(config, null, "Fehler");
+                    mapOverlayLegendMeta = "";
+                    setMapLegend(config, "");
+                    if (/timed out|timeout/i.test(reason)) setMapMeta(config, null, "Timeout", "error");
+                    else setMapMeta(config, null, "Fehler", "error");
                     return;
+                } finally {
+                    if (mapOverlayFetchController === controller) mapOverlayFetchController = null;
                 }
             }
 
@@ -7874,6 +8067,8 @@
             } else {
                 mapOverlayIndex = pickNearestTimestampIndex(mapOverlayTimestamps, previousTs) || pickCurrentIndex(mapOverlayTimestamps);
             }
+            mapOverlayLegendMeta = layerCache.legendMeta || formatOverlayLegendMeta(layerCache);
+            setMapLegend(config, mapOverlayLegendMeta);
             drawMapOverlayFrame(layerCache, config, mapOverlayIndex);
         };
 
@@ -7919,10 +8114,15 @@
                     const key = btn.dataset.layer;
                     if (!key || !MAP_OVERLAYS[key]) return;
                     if (key === mapOverlayKey) return;
+                    if (mapOverlayFetchController) {
+                        mapOverlayFetchController.abort();
+                        mapOverlayFetchController = null;
+                    }
                     mapOverlayKey = key;
+                    mapOverlayLegendMeta = "";
                     mapLayerButtons.forEach((b) => b.classList.toggle("active", b === btn));
                     stopMapPlay();
-                    setMapLegend(MAP_OVERLAYS[mapOverlayKey]);
+                    setMapLegend(MAP_OVERLAYS[mapOverlayKey], "");
                     scheduleMapOverlayUpdate(0, { keepIndex: false });
                 });
             });
@@ -8151,4 +8351,5 @@
 </body>
 
 </html>
+
 
