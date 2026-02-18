@@ -2877,7 +2877,7 @@
         const MAP_PLAY_INTERVAL_MS = 850;
         const MAP_FRAME_CACHE_LIMIT = 28;
         const MAP_RENDER_TARGET_POINTS = { high: 20000, mid: 13000, low: 7500 };
-        const MAP_FETCH_TARGET_POINTS = { high: 180, mid: 140, low: 110 };
+        const MAP_FETCH_TARGET_POINTS = { high: 96, mid: 72, low: 56 };
         const GEO_BBOX_NWP = { south: 42.981, west: 5.498, north: 51.819, east: 22.102 };
         const GEO_BBOX_NOWCAST = { south: 45.50288351657135, west: 8.098133748352293, north: 49.47817568460958, east: 17.742270413233744 };
         const MAP_OVERLAYS = {
@@ -7686,10 +7686,10 @@
             const centerLat = (bbox.north + bbox.south) * 0.5;
             const lonScale = Math.max(0.35, Math.cos(centerLat * Math.PI / 180));
             const aspect = clamp((lonSpan * lonScale) / latSpan, 0.45, 2.8);
-            const desired = clamp(Math.round(targetPoints), 48, 240);
-            let rows = clamp(Math.round(Math.sqrt(desired / Math.max(0.2, aspect))), 6, 24);
-            let cols = clamp(Math.round(rows * aspect), 6, 28);
-            while ((rows * cols) > 240) {
+            const desired = clamp(Math.round(targetPoints), 32, 160);
+            let rows = clamp(Math.round(Math.sqrt(desired / Math.max(0.2, aspect))), 5, 18);
+            let cols = clamp(Math.round(rows * aspect), 5, 22);
+            while ((rows * cols) > 160) {
                 if (cols >= rows) cols -= 1;
                 else rows -= 1;
             }
@@ -7722,6 +7722,26 @@
             if (endIso) queryEntries.push(["end", endIso]);
             queryEntries.push(["output_format", "geojson"]);
             const url = buildQueryUrlFromEntries(`${GEO_BASE}/timeseries/forecast/${resourceId}`, queryEntries);
+            return fetchJson(url, timeoutMs, signal ? { signal } : null);
+        };
+
+        const fetchGeosphereGridForecast = async (
+            resourceId,
+            params,
+            bbox,
+            timeoutMs = FETCH_TIMEOUT_MS,
+            startIso = null,
+            endIso = null,
+            signal = null,
+        ) => {
+            const query = {
+                parameters: params,
+                bbox: toBboxString(bbox),
+                output_format: "geojson",
+            };
+            if (startIso) query.start = startIso;
+            if (endIso) query.end = endIso;
+            const url = buildUrl(`${GEO_BASE}/grid/forecast/${resourceId}`, query);
             return fetchJson(url, timeoutMs, signal ? { signal } : null);
         };
 
@@ -7806,6 +7826,7 @@
             const maxAttempts = Number.isFinite(config.maxAttempts) ? Math.max(1, Math.round(config.maxAttempts)) : 2;
             let lastErr = null;
             let attempts = 0;
+            const preferSample = config.preferTimeseriesSample !== false;
 
             for (const bounds of boundCandidates) {
                 for (const paramSet of paramSets) {
@@ -7813,43 +7834,68 @@
                         if (attempts >= maxAttempts) break;
                         attempts += 1;
                         if (signal?.aborted) throw new Error("overlay request aborted");
-                        let samplePointsTarget = sampleTargetPoints;
-                        for (let sampleTry = 0; sampleTry < 2; sampleTry += 1) {
-                            const samplePoints = buildLatLonSampleGrid(bounds, samplePointsTarget);
-                            if (!samplePoints.length) {
-                                lastErr = new Error("overlay sample grid empty");
-                                break;
-                            }
-                            try {
-                                const data = await fetchGeosphereTimeseriesForecast(
-                                    config.resource,
-                                    paramSet,
-                                    samplePoints,
-                                    timeoutMs,
-                                    tw.startIso,
-                                    tw.endIso,
-                                    signal,
-                                );
-                                if (hasOverlayPayload(data)) {
-                                    return {
-                                        data,
-                                        fetchBounds: bounds,
-                                        paramsUsed: paramSet,
-                                        samplePointCount: samplePoints.length,
-                                    };
+                        if (preferSample) {
+                            let samplePointsTarget = sampleTargetPoints;
+                            for (let sampleTry = 0; sampleTry < 2; sampleTry += 1) {
+                                const samplePoints = buildLatLonSampleGrid(bounds, samplePointsTarget);
+                                if (!samplePoints.length) {
+                                    lastErr = new Error("overlay sample grid empty");
+                                    break;
                                 }
-                                lastErr = new Error("overlay payload empty");
-                                break;
-                            } catch (err) {
-                                if (isAbortError(err) || signal?.aborted) throw err;
-                                lastErr = err;
-                                const status = Number(err?.status);
-                                if ((status === 414 || status === 422) && sampleTry === 0) {
-                                    samplePointsTarget = Math.max(48, Math.round(samplePointsTarget * 0.72));
-                                    continue;
+                                try {
+                                    const data = await fetchGeosphereTimeseriesForecast(
+                                        config.resource,
+                                        paramSet,
+                                        samplePoints,
+                                        timeoutMs,
+                                        tw.startIso,
+                                        tw.endIso,
+                                        signal,
+                                    );
+                                    if (hasOverlayPayload(data)) {
+                                        return {
+                                            data,
+                                            fetchBounds: bounds,
+                                            paramsUsed: paramSet,
+                                            samplePointCount: samplePoints.length,
+                                        };
+                                    }
+                                    lastErr = new Error("overlay payload empty");
+                                    break;
+                                } catch (err) {
+                                    if (isAbortError(err) || signal?.aborted) throw err;
+                                    lastErr = err;
+                                    const status = Number(err?.status);
+                                    if ((status === 414 || status === 422 || status === 431) && sampleTry === 0) {
+                                        samplePointsTarget = Math.max(32, Math.round(samplePointsTarget * 0.65));
+                                        continue;
+                                    }
+                                    break;
                                 }
-                                break;
                             }
+                        }
+                        try {
+                            const data = await fetchGeosphereGridForecast(
+                                config.resource,
+                                paramSet,
+                                bounds,
+                                timeoutMs,
+                                tw.startIso,
+                                tw.endIso,
+                                signal,
+                            );
+                            if (hasOverlayPayload(data)) {
+                                return {
+                                    data,
+                                    fetchBounds: bounds,
+                                    paramsUsed: paramSet,
+                                    samplePointCount: null,
+                                };
+                            }
+                            lastErr = new Error("overlay payload empty");
+                        } catch (err) {
+                            if (isAbortError(err) || signal?.aborted) throw err;
+                            lastErr = err;
                         }
                     }
                     if (attempts >= maxAttempts) break;
