@@ -2877,6 +2877,7 @@
         const MAP_PLAY_INTERVAL_MS = 850;
         const MAP_FRAME_CACHE_LIMIT = 28;
         const MAP_RENDER_TARGET_POINTS = { high: 20000, mid: 13000, low: 7500 };
+        const MAP_FETCH_TARGET_POINTS = { high: 180, mid: 140, low: 110 };
         const GEO_BBOX_NWP = { south: 42.981, west: 5.498, north: 51.819, east: 22.102 };
         const GEO_BBOX_NOWCAST = { south: 45.50288351657135, west: 8.098133748352293, north: 49.47817568460958, east: 17.742270413233744 };
         const MAP_OVERLAYS = {
@@ -3459,6 +3460,16 @@
             return res.text();
         };
         const buildUrl = (base, params) => `${base}?${new URLSearchParams(params).toString()}`;
+        const buildQueryUrlFromEntries = (base, entries) => {
+            const query = new URLSearchParams();
+            for (const entry of entries || []) {
+                if (!Array.isArray(entry) || entry.length < 2) continue;
+                const [key, value] = entry;
+                if (!key || value === null || value === undefined) continue;
+                query.append(String(key), String(value));
+            }
+            return `${base}?${query.toString()}`;
+        };
 
         const DATASET_STAMP_KEY_PREFIX = "alpenwetter_dataset_stamp_v1";
         const datasetStampStorageKey = (site) => {
@@ -7521,6 +7532,17 @@
             return Math.round(base * 0.6);
         };
 
+        const mapFetchTargetForConfig = (config, zoom) => {
+            const targetKey = config?.targetKey || "mid";
+            const base = Number.isFinite(config?.fetchSamplePoints)
+                ? config.fetchSamplePoints
+                : (MAP_FETCH_TARGET_POINTS[targetKey] || MAP_FETCH_TARGET_POINTS.mid);
+            if (zoom >= 11) return Math.round(base * 1.2);
+            if (zoom >= 9) return base;
+            if (zoom >= 8) return Math.round(base * 0.84);
+            return Math.round(base * 0.68);
+        };
+
         const mapRenderScaleForConfig = (config, zoom) => {
             const targetKey = config?.targetKey || "mid";
             let scale = 0.82;
@@ -7657,23 +7679,49 @@
             }, MAP_PLAY_INTERVAL_MS);
         };
 
-        const fetchGeosphereGridForecast = async (
+        const buildLatLonSampleGrid = (bbox, targetPoints = 140) => {
+            if (!bbox) return [];
+            const latSpan = Math.max(0.02, bbox.north - bbox.south);
+            const lonSpan = Math.max(0.02, bbox.east - bbox.west);
+            const centerLat = (bbox.north + bbox.south) * 0.5;
+            const lonScale = Math.max(0.35, Math.cos(centerLat * Math.PI / 180));
+            const aspect = clamp((lonSpan * lonScale) / latSpan, 0.45, 2.8);
+            const desired = clamp(Math.round(targetPoints), 48, 240);
+            let rows = clamp(Math.round(Math.sqrt(desired / Math.max(0.2, aspect))), 6, 24);
+            let cols = clamp(Math.round(rows * aspect), 6, 28);
+            while ((rows * cols) > 240) {
+                if (cols >= rows) cols -= 1;
+                else rows -= 1;
+            }
+            const points = [];
+            const rowDenom = Math.max(1, rows - 1);
+            const colDenom = Math.max(1, cols - 1);
+            for (let r = 0; r < rows; r += 1) {
+                const lat = bbox.south + (latSpan * (r / rowDenom));
+                for (let c = 0; c < cols; c += 1) {
+                    const lon = bbox.west + (lonSpan * (c / colDenom));
+                    points.push(`${lat.toFixed(4)},${lon.toFixed(4)}`);
+                }
+            }
+            return points;
+        };
+
+        const fetchGeosphereTimeseriesForecast = async (
             resourceId,
             params,
-            bbox,
+            latLonPoints,
             timeoutMs = FETCH_TIMEOUT_MS,
             startIso = null,
             endIso = null,
             signal = null,
         ) => {
-            const query = {
-                parameters: params,
-                bbox: toBboxString(bbox),
-                output_format: "geojson",
-            };
-            if (startIso) query.start = startIso;
-            if (endIso) query.end = endIso;
-            const url = buildUrl(`${GEO_BASE}/grid/forecast/${resourceId}`, query);
+            const queryEntries = [];
+            for (const p of (params || [])) queryEntries.push(["parameters", p]);
+            for (const ll of (latLonPoints || [])) queryEntries.push(["lat_lon", ll]);
+            if (startIso) queryEntries.push(["start", startIso]);
+            if (endIso) queryEntries.push(["end", endIso]);
+            queryEntries.push(["output_format", "geojson"]);
+            const url = buildQueryUrlFromEntries(`${GEO_BASE}/timeseries/forecast/${resourceId}`, queryEntries);
             return fetchJson(url, timeoutMs, signal ? { signal } : null);
         };
 
@@ -7748,6 +7796,7 @@
             const boundCandidates = [primaryBounds];
             if (!config.disableBoundFallback && !bboxContains(primaryBounds, fallbackBounds)) boundCandidates.push(fallbackBounds);
             const paramSets = normalizeParamSets(config);
+            const sampleTargetPoints = clamp(mapFetchTargetForConfig(config, zoom), 48, 240);
             const defaultWindows = 1;
             const maxWindows = Number.isFinite(config.maxTimeWindows)
                 ? Math.max(1, Math.round(config.maxTimeWindows))
@@ -7764,21 +7813,43 @@
                         if (attempts >= maxAttempts) break;
                         attempts += 1;
                         if (signal?.aborted) throw new Error("overlay request aborted");
-                        try {
-                            const data = await fetchGeosphereGridForecast(
-                                config.resource,
-                                paramSet,
-                                bounds,
-                                timeoutMs,
-                                tw.startIso,
-                                tw.endIso,
-                                signal,
-                            );
-                            if (hasOverlayPayload(data)) return { data, fetchBounds: bounds, paramsUsed: paramSet };
-                            lastErr = new Error("overlay payload empty");
-                        } catch (err) {
-                            if (isAbortError(err) || signal?.aborted) throw err;
-                            lastErr = err;
+                        let samplePointsTarget = sampleTargetPoints;
+                        for (let sampleTry = 0; sampleTry < 2; sampleTry += 1) {
+                            const samplePoints = buildLatLonSampleGrid(bounds, samplePointsTarget);
+                            if (!samplePoints.length) {
+                                lastErr = new Error("overlay sample grid empty");
+                                break;
+                            }
+                            try {
+                                const data = await fetchGeosphereTimeseriesForecast(
+                                    config.resource,
+                                    paramSet,
+                                    samplePoints,
+                                    timeoutMs,
+                                    tw.startIso,
+                                    tw.endIso,
+                                    signal,
+                                );
+                                if (hasOverlayPayload(data)) {
+                                    return {
+                                        data,
+                                        fetchBounds: bounds,
+                                        paramsUsed: paramSet,
+                                        samplePointCount: samplePoints.length,
+                                    };
+                                }
+                                lastErr = new Error("overlay payload empty");
+                                break;
+                            } catch (err) {
+                                if (isAbortError(err) || signal?.aborted) throw err;
+                                lastErr = err;
+                                const status = Number(err?.status);
+                                if ((status === 414 || status === 422) && sampleTry === 0) {
+                                    samplePointsTarget = Math.max(48, Math.round(samplePointsTarget * 0.72));
+                                    continue;
+                                }
+                                break;
+                            }
                         }
                     }
                     if (attempts >= maxAttempts) break;
