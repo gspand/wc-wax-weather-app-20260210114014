@@ -2897,8 +2897,8 @@
                 fetchMaxSpanLat: 2.8,
                 fetchMaxSpanLon: 3.8,
                 fetchTimeoutMs: 8000,
-                pastHours: 0.25,
-                futureHours: 6.5,
+                pastHours: 0.15,
+                futureHours: 4,
                 maxTimeWindows: 1,
                 maxAttempts: 2,
                 value: (params, idx) => {
@@ -2935,8 +2935,8 @@
                 fetchMaxSpanLat: 2.8,
                 fetchMaxSpanLon: 3.8,
                 fetchTimeoutMs: 8000,
-                pastHours: 0.25,
-                futureHours: 6.5,
+                pastHours: 0.15,
+                futureHours: 4,
                 maxTimeWindows: 1,
                 maxAttempts: 2,
                 value: (params, idx) => params.rr_acc?.data?.[idx] ?? null,
@@ -2961,8 +2961,8 @@
                 fetchMaxSpanLat: 2.8,
                 fetchMaxSpanLon: 3.8,
                 fetchTimeoutMs: 8000,
-                pastHours: 0.25,
-                futureHours: 6.5,
+                pastHours: 0.15,
+                futureHours: 4,
                 maxTimeWindows: 1,
                 maxAttempts: 2,
                 value: (params, idx) => {
@@ -2991,7 +2991,7 @@
                 fetchMaxSpanLon: 1.6,
                 fetchTimeoutMs: 7000,
                 pastHours: 0.15,
-                futureHours: 1,
+                futureHours: 0.75,
                 maxTimeWindows: 1,
                 maxAttempts: 2,
                 disableBoundFallback: true,
@@ -7726,8 +7726,11 @@
             const basePad = Number.isFinite(config.padRatio) ? config.padRatio : 0.2;
             const zoomFactor = zoom >= 11 ? 0.78 : (zoom >= 9 ? 0.88 : 1);
             const effectivePad = Math.max(0.08, Math.min(0.3, basePad * zoomFactor));
-            const fetchMaxSpanLat = Number.isFinite(config.fetchMaxSpanLat) ? config.fetchMaxSpanLat : config.maxSpanLat;
-            const fetchMaxSpanLon = Number.isFinite(config.fetchMaxSpanLon) ? config.fetchMaxSpanLon : config.maxSpanLon;
+            const fetchSpanFactor = zoom >= 11 ? 1.16 : (zoom >= 9 ? 1.04 : (zoom >= 8 ? 0.84 : 0.7));
+            const fetchMaxSpanLatBase = Number.isFinite(config.fetchMaxSpanLat) ? config.fetchMaxSpanLat : config.maxSpanLat;
+            const fetchMaxSpanLonBase = Number.isFinite(config.fetchMaxSpanLon) ? config.fetchMaxSpanLon : config.maxSpanLon;
+            const fetchMaxSpanLat = Number.isFinite(fetchMaxSpanLatBase) ? fetchMaxSpanLatBase * fetchSpanFactor : null;
+            const fetchMaxSpanLon = Number.isFinite(fetchMaxSpanLonBase) ? fetchMaxSpanLonBase * fetchSpanFactor : null;
             const primaryBounds = limitBboxSpan(
                 expandBbox(viewBbox, effectivePad, limits),
                 fetchMaxSpanLat,
@@ -7736,8 +7739,8 @@
             );
             const fallbackBounds = limitBboxSpan(
                 viewBbox,
-                Number.isFinite(config.maxSpanLat) ? config.maxSpanLat * 0.8 : null,
-                Number.isFinite(config.maxSpanLon) ? config.maxSpanLon * 0.8 : null,
+                Number.isFinite(config.maxSpanLat) ? config.maxSpanLat * 0.65 : null,
+                Number.isFinite(config.maxSpanLon) ? config.maxSpanLon * 0.65 : null,
                 limits,
             );
             const boundCandidates = [primaryBounds];
@@ -7983,7 +7986,11 @@
             const viewBboxRaw = getMapViewBbox();
             if (!viewBboxRaw) return;
             const viewBbox = clampBbox(viewBboxRaw, limits);
-            const viewBboxLimited = limitBboxSpan(viewBbox, config.maxSpanLat, config.maxSpanLon, limits);
+            const zoom = mapInstance.getZoom();
+            const spanFactor = zoom >= 11 ? 1 : (zoom >= 9 ? 0.86 : (zoom >= 8 ? 0.72 : 0.58));
+            const viewMaxSpanLat = Number.isFinite(config.maxSpanLat) ? config.maxSpanLat * spanFactor : null;
+            const viewMaxSpanLon = Number.isFinite(config.maxSpanLon) ? config.maxSpanLon * spanFactor : null;
+            const viewBboxLimited = limitBboxSpan(viewBbox, viewMaxSpanLat, viewMaxSpanLon, limits);
             if (!bboxIntersects(viewBboxRaw, limits)) {
                 if (mapOverlayFetchController) {
                     mapOverlayFetchController.abort();
