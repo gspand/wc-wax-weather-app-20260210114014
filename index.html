@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="de">
 
 <head>
@@ -2874,7 +2874,7 @@
         let mapPlayActive = false;
         const MAP_PLAY_INTERVAL_MS = 850;
         const MAP_FRAME_CACHE_LIMIT = 28;
-        const MAP_RENDER_TARGET_POINTS = { high: 28000, mid: 18000, low: 10000 };
+        const MAP_RENDER_TARGET_POINTS = { high: 20000, mid: 13000, low: 7500 };
         const GEO_BBOX_NWP = { south: 42.981, west: 5.498, north: 51.819, east: 22.102 };
         const GEO_BBOX_NOWCAST = { south: 45.50288351657135, west: 8.098133748352293, north: 49.47817568460958, east: 17.742270413233744 };
         const MAP_OVERLAYS = {
@@ -2890,15 +2890,17 @@
                 crs: "EPSG:4326",
                 bounds: GEO_BBOX_NWP,
                 ttlMs: 20 * 60 * 1000,
-                padRatio: 0.18,
+                padRatio: 0.14,
                 targetKey: "high",
-                maxSpanLat: 2.4,
-                maxSpanLon: 3.4,
-                fetchTimeoutMs: 12000,
-                pastHours: 0.35,
-                futureHours: 8,
-                maxTimeWindows: 2,
-                maxAttempts: 3,
+                maxSpanLat: 2.0,
+                maxSpanLon: 2.8,
+                fetchMaxSpanLat: 2.8,
+                fetchMaxSpanLon: 3.8,
+                fetchTimeoutMs: 8000,
+                pastHours: 0.25,
+                futureHours: 6.5,
+                maxTimeWindows: 1,
+                maxAttempts: 2,
                 value: (params, idx) => {
                     const u = params.u10m?.data?.[idx];
                     const v = params.v10m?.data?.[idx];
@@ -2926,15 +2928,17 @@
                 crs: "EPSG:4326",
                 bounds: GEO_BBOX_NWP,
                 ttlMs: 20 * 60 * 1000,
-                padRatio: 0.18,
+                padRatio: 0.14,
                 targetKey: "high",
-                maxSpanLat: 2.4,
-                maxSpanLon: 3.4,
-                fetchTimeoutMs: 12000,
-                pastHours: 0.35,
-                futureHours: 8,
-                maxTimeWindows: 2,
-                maxAttempts: 3,
+                maxSpanLat: 2.0,
+                maxSpanLon: 2.8,
+                fetchMaxSpanLat: 2.8,
+                fetchMaxSpanLon: 3.8,
+                fetchTimeoutMs: 8000,
+                pastHours: 0.25,
+                futureHours: 6.5,
+                maxTimeWindows: 1,
+                maxAttempts: 2,
                 value: (params, idx) => params.rr_acc?.data?.[idx] ?? null,
             },
             cloud: {
@@ -2950,15 +2954,17 @@
                 crs: "EPSG:4326",
                 bounds: GEO_BBOX_NWP,
                 ttlMs: 20 * 60 * 1000,
-                padRatio: 0.18,
+                padRatio: 0.14,
                 targetKey: "high",
-                maxSpanLat: 2.4,
-                maxSpanLon: 3.4,
-                fetchTimeoutMs: 12000,
-                pastHours: 0.35,
-                futureHours: 8,
-                maxTimeWindows: 2,
-                maxAttempts: 3,
+                maxSpanLat: 2.0,
+                maxSpanLon: 2.8,
+                fetchMaxSpanLat: 2.8,
+                fetchMaxSpanLon: 3.8,
+                fetchTimeoutMs: 8000,
+                pastHours: 0.25,
+                futureHours: 6.5,
+                maxTimeWindows: 1,
+                maxAttempts: 2,
                 value: (params, idx) => {
                     const raw = params.tcc?.data?.[idx] ?? params.clct?.data?.[idx];
                     if (raw === null || raw === undefined) return null;
@@ -2977,13 +2983,15 @@
                 crs: "EPSG:31287",
                 bounds: GEO_BBOX_NOWCAST,
                 ttlMs: 4 * 60 * 1000,
-                padRatio: 0.12,
+                padRatio: 0.1,
                 targetKey: "mid",
-                maxSpanLat: 1.0,
-                maxSpanLon: 1.4,
-                fetchTimeoutMs: 10000,
+                maxSpanLat: 0.9,
+                maxSpanLon: 1.2,
+                fetchMaxSpanLat: 1.2,
+                fetchMaxSpanLon: 1.6,
+                fetchTimeoutMs: 7000,
                 pastHours: 0.15,
-                futureHours: 1.25,
+                futureHours: 1,
                 maxTimeWindows: 1,
                 maxAttempts: 2,
                 disableBoundFallback: true,
@@ -7718,10 +7726,12 @@
             const basePad = Number.isFinite(config.padRatio) ? config.padRatio : 0.2;
             const zoomFactor = zoom >= 11 ? 0.78 : (zoom >= 9 ? 0.88 : 1);
             const effectivePad = Math.max(0.08, Math.min(0.3, basePad * zoomFactor));
+            const fetchMaxSpanLat = Number.isFinite(config.fetchMaxSpanLat) ? config.fetchMaxSpanLat : config.maxSpanLat;
+            const fetchMaxSpanLon = Number.isFinite(config.fetchMaxSpanLon) ? config.fetchMaxSpanLon : config.maxSpanLon;
             const primaryBounds = limitBboxSpan(
                 expandBbox(viewBbox, effectivePad, limits),
-                config.maxSpanLat,
-                config.maxSpanLon,
+                fetchMaxSpanLat,
+                fetchMaxSpanLon,
                 limits,
             );
             const fallbackBounds = limitBboxSpan(
@@ -7733,13 +7743,13 @@
             const boundCandidates = [primaryBounds];
             if (!config.disableBoundFallback && !bboxContains(primaryBounds, fallbackBounds)) boundCandidates.push(fallbackBounds);
             const paramSets = normalizeParamSets(config);
-            const defaultWindows = config.resource === "nowcast-v1-15min-1km" ? 1 : 2;
+            const defaultWindows = 1;
             const maxWindows = Number.isFinite(config.maxTimeWindows)
                 ? Math.max(1, Math.round(config.maxTimeWindows))
                 : defaultWindows;
             const timeWindowsAll = overlayTimeWindowCandidates(config);
             const timeWindows = timeWindowsAll.slice(0, maxWindows);
-            const maxAttempts = Number.isFinite(config.maxAttempts) ? Math.max(1, Math.round(config.maxAttempts)) : 4;
+            const maxAttempts = Number.isFinite(config.maxAttempts) ? Math.max(1, Math.round(config.maxAttempts)) : 2;
             let lastErr = null;
             let attempts = 0;
 
@@ -8351,5 +8361,4 @@
 </body>
 
 </html>
-
 
