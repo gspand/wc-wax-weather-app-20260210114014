@@ -7846,14 +7846,15 @@
         const fetchOverlayDataWithFallback = async (config, viewBbox, limits, signal = null) => {
             const timeoutMs = Number.isFinite(config.fetchTimeoutMs) ? config.fetchTimeoutMs : FETCH_TIMEOUT_MS;
             const zoom = mapInstance ? mapInstance.getZoom() : 8;
+            const wideViewMode = zoom <= 9;
             const basePad = Number.isFinite(config.padRatio) ? config.padRatio : 0.2;
             const zoomFactor = zoom >= 11 ? 0.78 : (zoom >= 9 ? 0.88 : 1);
             const effectivePad = Math.max(0.08, Math.min(0.3, basePad * zoomFactor));
             const fetchSpanFactor = zoom >= 11 ? 1.16 : (zoom >= 9 ? 1.04 : (zoom >= 8 ? 0.84 : 0.7));
             const fetchMaxSpanLatBase = Number.isFinite(config.fetchMaxSpanLat) ? config.fetchMaxSpanLat : config.maxSpanLat;
             const fetchMaxSpanLonBase = Number.isFinite(config.fetchMaxSpanLon) ? config.fetchMaxSpanLon : config.maxSpanLon;
-            const fetchMaxSpanLat = Number.isFinite(fetchMaxSpanLatBase) ? fetchMaxSpanLatBase * fetchSpanFactor : null;
-            const fetchMaxSpanLon = Number.isFinite(fetchMaxSpanLonBase) ? fetchMaxSpanLonBase * fetchSpanFactor : null;
+            const fetchMaxSpanLat = wideViewMode ? null : (Number.isFinite(fetchMaxSpanLatBase) ? fetchMaxSpanLatBase * fetchSpanFactor : null);
+            const fetchMaxSpanLon = wideViewMode ? null : (Number.isFinite(fetchMaxSpanLonBase) ? fetchMaxSpanLonBase * fetchSpanFactor : null);
             const primaryBounds = limitBboxSpan(
                 expandBbox(viewBbox, effectivePad, limits),
                 fetchMaxSpanLat,
@@ -7879,7 +7880,7 @@
             const maxAttempts = Number.isFinite(config.maxAttempts) ? Math.max(1, Math.round(config.maxAttempts)) : 2;
             let lastErr = null;
             let attempts = 0;
-            const preferSample = config.preferTimeseriesSample !== false;
+            const preferSample = config.preferTimeseriesSample !== false || wideViewMode;
 
             for (const bounds of boundCandidates) {
                 for (const paramSet of paramSets) {
@@ -8149,6 +8150,7 @@
 
         const limitOverlayViewBboxForConfig = (viewBbox, config, limits) => {
             const zoom = mapInstance ? mapInstance.getZoom() : 8;
+            if (zoom <= 9) return clampBbox(viewBbox, limits);
             const spanFactor = overlaySpanFactorForZoom(zoom);
             const viewMaxSpanLat = Number.isFinite(config.maxSpanLat) ? config.maxSpanLat * spanFactor : null;
             const viewMaxSpanLon = Number.isFinite(config.maxSpanLon) ? config.maxSpanLon * spanFactor : null;
