@@ -3237,14 +3237,14 @@
                 },
             },
             nowcast: {
-                label: "Nowcast Niederschlag (1h eq)",
+                label: "Nowcast Niederschlag (1h eq, Schnee-korr.)",
                 resource: "nowcast-v1-15min-1km",
                 params: ["rr", "pt"],
                 preferTimeseriesSample: false,
                 smoothGradient: true,
                 unit: "mm/h",
                 min: 0,
-                max: 8,
+                max: 20,
                 opacity: 0.54,
                 colors: ["#0ea5e9", "#38bdf8", "#facc15", "#f97316", "#ef4444"],
                 crs: "EPSG:31287",
@@ -3264,12 +3264,25 @@
                 maxAttempts: 2,
                 disableBoundFallback: true,
                 value: (params, idx) => {
-                    const raw15m = params.rr?.data?.[idx];
-                    if (!Number.isFinite(raw15m)) return null;
-                    // Nowcast rr is a 15-minute amount -> scale to hourly equivalent (mm/h).
-                    const rate = raw15m * 4;
+                    const series = params.rr?.data;
+                    if (!Array.isArray(series) || !series.length) return null;
+                    const start = Math.max(0, idx - 1);
+                    const end = Math.min(series.length - 1, idx + 2);
+                    let sum = 0;
+                    let count = 0;
+                    for (let j = start; j <= end; j += 1) {
+                        const v = series[j];
+                        if (!Number.isFinite(v)) continue;
+                        sum += v;
+                        count += 1;
+                    }
+                    if (!count) return null;
+                    // rr is 15-minute amount; normalize sampled window to 1h equivalent.
+                    let rate = sum * (4 / count);
                     const pType = params.pt?.data?.[idx];
-                    if (Number.isFinite(pType) && pType > 0 && rate < 0.2) return 0.2;
+                    // Snow in nowcast is often lower in liquid-equivalent than perceived intensity.
+                    if (Number.isFinite(pType) && pType >= 5) rate *= 5.0;
+                    else if (Number.isFinite(pType) && pType >= 3) rate *= 2.4;
                     return rate;
                 },
             },
