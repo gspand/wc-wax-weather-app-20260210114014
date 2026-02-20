@@ -1786,9 +1786,9 @@
                     <span class="inline-label">Layer</span>
                     <div class="map-layer-group">
                         <button class="map-layer-btn active" data-layer="wind" type="button">Wind</button>
-                        <button class="map-layer-btn" data-layer="precip" type="button">Regen</button>
+                        <button class="map-layer-btn" data-layer="precip" type="button">Niederschlag</button>
                         <button class="map-layer-btn" data-layer="cloud" type="button">Wolken</button>
-                        <button class="map-layer-btn" data-layer="nowcast" type="button">Nowcast</button>
+                        <button class="map-layer-btn" data-layer="nowcast" type="button">Nowcast NS</button>
                         <button class="map-layer-btn" data-layer="paragliding_score" type="button">Paragleiten Score</button>
                         <button class="map-layer-btn" data-layer="cycling_score" type="button">Radfahren Score</button>
                         <button class="map-layer-btn" data-layer="xc_score" type="button">Langlauf Score</button>
@@ -3157,9 +3157,9 @@
                 },
             },
             precip: {
-                label: "Regen (1h)",
+                label: "Niederschlag (1h)",
                 resource: "nwp-v1-1h-2500m",
-                params: ["rain_acc", "rr_acc"],
+                params: ["rr_acc", "rain_acc", "snow_acc"],
                 preferTimeseriesSample: false,
                 smoothGradient: true,
                 unit: "mm",
@@ -3183,17 +3183,24 @@
                 maxTimeWindows: 1,
                 maxAttempts: 2,
                 value: (params, idx) => {
+                    const currTotal = params.rr_acc?.data?.[idx];
+                    if (Number.isFinite(currTotal)) {
+                        const prevTotal = idx > 0 ? params.rr_acc?.data?.[idx - 1] : null;
+                        if (!Number.isFinite(prevTotal)) return Math.max(0, currTotal);
+                        return Math.max(0, currTotal - prevTotal);
+                    }
                     const currRain = params.rain_acc?.data?.[idx];
                     const prevRain = idx > 0 ? params.rain_acc?.data?.[idx - 1] : null;
-                    if (Number.isFinite(currRain)) {
-                        if (Number.isFinite(prevRain)) return Math.max(0, currRain - prevRain);
-                        return currRain;
-                    }
-                    const currTotal = params.rr_acc?.data?.[idx];
-                    if (!Number.isFinite(currTotal)) return null;
-                    const prevTotal = idx > 0 ? params.rr_acc?.data?.[idx - 1] : null;
-                    if (!Number.isFinite(prevTotal)) return currTotal;
-                    return Math.max(0, currTotal - prevTotal);
+                    const rainDelta = Number.isFinite(currRain)
+                        ? Math.max(0, currRain - (Number.isFinite(prevRain) ? prevRain : 0))
+                        : null;
+                    const currSnow = params.snow_acc?.data?.[idx];
+                    const prevSnow = idx > 0 ? params.snow_acc?.data?.[idx - 1] : null;
+                    const snowDelta = Number.isFinite(currSnow)
+                        ? Math.max(0, currSnow - (Number.isFinite(prevSnow) ? prevSnow : 0))
+                        : null;
+                    if (!Number.isFinite(rainDelta) && !Number.isFinite(snowDelta)) return null;
+                    return Math.max(0, (rainDelta || 0) + (snowDelta || 0));
                 },
             },
             cloud: {
@@ -3230,14 +3237,14 @@
                 },
             },
             nowcast: {
-                label: "Nowcast Regen (1h eq)",
+                label: "Nowcast Niederschlag (1h eq)",
                 resource: "nowcast-v1-15min-1km",
-                params: ["rr"],
+                params: ["rr", "pt"],
                 preferTimeseriesSample: false,
                 smoothGradient: true,
                 unit: "mm/h",
                 min: 0,
-                max: 20,
+                max: 8,
                 opacity: 0.54,
                 colors: ["#0ea5e9", "#38bdf8", "#facc15", "#f97316", "#ef4444"],
                 crs: "EPSG:31287",
@@ -3259,8 +3266,11 @@
                 value: (params, idx) => {
                     const raw15m = params.rr?.data?.[idx];
                     if (!Number.isFinite(raw15m)) return null;
-                    // Nowcast rr is a 15-minute amount -> scale to hourly equivalent.
-                    return raw15m * 4;
+                    // Nowcast rr is a 15-minute amount -> scale to hourly equivalent (mm/h).
+                    const rate = raw15m * 4;
+                    const pType = params.pt?.data?.[idx];
+                    if (Number.isFinite(pType) && pType > 0 && rate < 0.2) return 0.2;
+                    return rate;
                 },
             },
             paragliding_score: {
