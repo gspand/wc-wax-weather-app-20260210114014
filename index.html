@@ -3003,7 +3003,7 @@
                 maxSpanLon: 1.2,
                 fetchMaxSpanLat: 1.2,
                 fetchMaxSpanLon: 1.6,
-                fetchTimeoutMs: 7000,
+                fetchTimeoutMs: 12000,
                 pastHours: 0.15,
                 futureHours: 0.75,
                 maxTimeWindows: 1,
@@ -7847,6 +7847,99 @@
             });
         };
 
+        const splitBboxIntoTiles = (bbox, maxLatSpan = null, maxLonSpan = null) => {
+            if (!bbox) return [];
+            const latSpan = Math.max(0, bbox.north - bbox.south);
+            const lonSpan = Math.max(0, bbox.east - bbox.west);
+            if (latSpan <= 0 || lonSpan <= 0) return [];
+            const rows = Number.isFinite(maxLatSpan) && maxLatSpan > 0 ? Math.max(1, Math.ceil(latSpan / maxLatSpan)) : 1;
+            const cols = Number.isFinite(maxLonSpan) && maxLonSpan > 0 ? Math.max(1, Math.ceil(lonSpan / maxLonSpan)) : 1;
+            const tiles = [];
+            for (let r = 0; r < rows; r += 1) {
+                const south = bbox.south + (latSpan * r / rows);
+                const north = bbox.south + (latSpan * (r + 1) / rows);
+                for (let c = 0; c < cols; c += 1) {
+                    const west = bbox.west + (lonSpan * c / cols);
+                    const east = bbox.west + (lonSpan * (c + 1) / cols);
+                    tiles.push({ south, west, north, east });
+                }
+            }
+            return tiles;
+        };
+
+        const mergeOverlayPayloads = (payloads) => {
+            const valid = (payloads || []).filter((payload) => hasOverlayPayload(payload));
+            if (!valid.length) return null;
+            const reference = valid.reduce((best, item) => {
+                const bestCount = Array.isArray(best?.timestamps) ? best.timestamps.length : 0;
+                const itemCount = Array.isArray(item?.timestamps) ? item.timestamps.length : 0;
+                return itemCount > bestCount ? item : best;
+            }, valid[0]);
+            const featureMap = new Map();
+            for (const payload of valid) {
+                const features = Array.isArray(payload?.features) ? payload.features : [];
+                for (const feature of features) {
+                    const coords = feature?.geometry?.coordinates;
+                    if (!Array.isArray(coords) || coords.length < 2) continue;
+                    const lon = Number(coords[0]);
+                    const lat = Number(coords[1]);
+                    if (!Number.isFinite(lon) || !Number.isFinite(lat)) continue;
+                    const key = `${lon.toFixed(5)}|${lat.toFixed(5)}`;
+                    const srcParams = feature?.properties?.parameters || {};
+                    if (!featureMap.has(key)) {
+                        featureMap.set(key, {
+                            ...feature,
+                            properties: {
+                                ...(feature?.properties || {}),
+                                parameters: { ...srcParams },
+                            },
+                        });
+                        continue;
+                    }
+                    const existing = featureMap.get(key);
+                    const existingParams = existing?.properties?.parameters || {};
+                    for (const [pName, pValue] of Object.entries(srcParams)) {
+                        if (!(pName in existingParams)) existingParams[pName] = pValue;
+                    }
+                    existing.properties = {
+                        ...(existing.properties || {}),
+                        parameters: existingParams,
+                    };
+                }
+            }
+            return {
+                ...reference,
+                timestamps: Array.isArray(reference?.timestamps) ? reference.timestamps : [],
+                features: Array.from(featureMap.values()),
+            };
+        };
+
+        const fetchGeosphereGridForecastTiled = async (
+            resourceId,
+            params,
+            bbox,
+            tileMaxLatSpan,
+            tileMaxLonSpan,
+            timeoutMs = FETCH_TIMEOUT_MS,
+            startIso = null,
+            endIso = null,
+            signal = null,
+        ) => {
+            const tiles = splitBboxIntoTiles(bbox, tileMaxLatSpan, tileMaxLonSpan);
+            if (tiles.length <= 1) {
+                return fetchGeosphereGridForecast(resourceId, params, bbox, timeoutMs, startIso, endIso, signal);
+            }
+            const payloads = [];
+            for (const tile of tiles) {
+                if (signal?.aborted) throw new Error("overlay request aborted");
+                const payload = await fetchGeosphereGridForecast(resourceId, params, tile, timeoutMs, startIso, endIso, signal);
+                if (hasOverlayPayload(payload)) payloads.push(payload);
+            }
+            const merged = mergeOverlayPayloads(payloads);
+            if (hasOverlayPayload(merged)) return merged;
+            throw new Error("overlay payload empty");
+        };
+
         const fetchOverlayDataWithFallback = async (config, viewBbox, limits, signal = null) => {
             const timeoutMs = Number.isFinite(config.fetchTimeoutMs) ? config.fetchTimeoutMs : FETCH_TIMEOUT_MS;
             const zoom = mapInstance ? mapInstance.getZoom() : 8;
@@ -7854,17 +7947,11 @@
             const basePad = Number.isFinite(config.padRatio) ? config.padRatio : 0.2;
             const zoomFactor = zoom >= 11 ? 0.78 : (zoom >= 9 ? 0.88 : 1);
             const effectivePad = Math.max(0.08, Math.min(0.3, basePad * zoomFactor));
-            const fetchSpanFactor = zoom >= 11 ? 1.16 : (zoom >= 9 ? 1.04 : (zoom >= 8 ? 0.84 : 0.7));
             const fetchMaxSpanLatBase = Number.isFinite(config.fetchMaxSpanLat) ? config.fetchMaxSpanLat : config.maxSpanLat;
             const fetchMaxSpanLonBase = Number.isFinite(config.fetchMaxSpanLon) ? config.fetchMaxSpanLon : config.maxSpanLon;
-            const fetchMaxSpanLat = null;
-            const fetchMaxSpanLon = null;
-            const primaryBounds = limitBboxSpan(
-                expandBbox(viewBbox, effectivePad, limits),
-                fetchMaxSpanLat,
-                fetchMaxSpanLon,
-                limits,
-            );
+            const tileMaxSpanLat = Number.isFinite(fetchMaxSpanLatBase) ? Math.max(0.25, fetchMaxSpanLatBase) : null;
+            const tileMaxSpanLon = Number.isFinite(fetchMaxSpanLonBase) ? Math.max(0.25, fetchMaxSpanLonBase) : null;
+            const primaryBounds = clampBbox(expandBbox(viewBbox, effectivePad, limits), limits);
             const fallbackBounds = limitBboxSpan(
                 viewBbox,
                 Number.isFinite(config.maxSpanLat) ? config.maxSpanLat * 0.65 : null,
@@ -7874,7 +7961,6 @@
             const boundCandidates = [primaryBounds];
             if (!config.disableBoundFallback && !bboxContains(primaryBounds, fallbackBounds)) boundCandidates.push(fallbackBounds);
             const paramSets = normalizeParamSets(config);
-            const sampleTargetPoints = clamp(mapFetchTargetForConfig(config, zoom), 48, 240);
             const defaultWindows = 1;
             const maxWindows = Number.isFinite(config.maxTimeWindows)
                 ? Math.max(1, Math.round(config.maxTimeWindows))
@@ -7884,7 +7970,6 @@
             const maxAttempts = Number.isFinite(config.maxAttempts) ? Math.max(1, Math.round(config.maxAttempts)) : 2;
             let lastErr = null;
             let attempts = 0;
-            const preferSample = false;
 
             for (const bounds of boundCandidates) {
                 for (const paramSet of paramSets) {
@@ -7892,52 +7977,13 @@
                         if (attempts >= maxAttempts) break;
                         attempts += 1;
                         if (signal?.aborted) throw new Error("overlay request aborted");
-                        if (preferSample) {
-                            let samplePointsTarget = sampleTargetPoints;
-                            for (let sampleTry = 0; sampleTry < 2; sampleTry += 1) {
-                                const samplePoints = buildLatLonSampleGrid(bounds, samplePointsTarget);
-                                if (!samplePoints.length) {
-                                    lastErr = new Error("overlay sample grid empty");
-                                    break;
-                                }
-                                try {
-                                    const data = await fetchGeosphereTimeseriesForecast(
-                                        config.resource,
-                                        paramSet,
-                                        samplePoints,
-                                        timeoutMs,
-                                        tw.startIso,
-                                        tw.endIso,
-                                        signal,
-                                    );
-                                    if (hasOverlayPayload(data)) {
-                                        return {
-                                            data,
-                                            fetchBounds: bounds,
-                                            paramsUsed: paramSet,
-                                            samplePointCount: samplePoints.length,
-                                            wideViewMode,
-                                        };
-                                    }
-                                    lastErr = new Error("overlay payload empty");
-                                    break;
-                                } catch (err) {
-                                    if (isAbortError(err) || signal?.aborted) throw err;
-                                    lastErr = err;
-                                    const status = Number(err?.status);
-                                    if ((status === 414 || status === 422 || status === 431) && sampleTry === 0) {
-                                        samplePointsTarget = Math.max(32, Math.round(samplePointsTarget * 0.65));
-                                        continue;
-                                    }
-                                    break;
-                                }
-                            }
-                        }
                         try {
-                            const data = await fetchGeosphereGridForecast(
+                            const data = await fetchGeosphereGridForecastTiled(
                                 config.resource,
                                 paramSet,
                                 bounds,
+                                tileMaxSpanLat,
+                                tileMaxSpanLon,
                                 timeoutMs,
                                 tw.startIso,
                                 tw.endIso,
@@ -8061,7 +8107,8 @@
             const padLat = cache.latStep * 1.5;
             const padLon = cache.lonStep * 1.5;
             const targetPoints = mapRenderTargetForConfig(config, zoom);
-            const stride = Math.max(1, Math.ceil(cache.points.length / Math.max(2500, targetPoints)));
+            const baseStride = Math.max(1, Math.ceil(cache.points.length / Math.max(2500, targetPoints)));
+            const stride = config.smoothGradient ? Math.max(1, Math.floor(baseStride * 0.65)) : baseStride;
             const offset = stride > 1 ? (timeIndex % stride) : 0;
 
             ctx.globalAlpha = config.opacity;
@@ -8090,9 +8137,28 @@
                     smoothCanvas.height = canvas.height;
                     const smoothCtx = smoothCanvas.getContext("2d");
                     if (smoothCtx) {
-                        smoothCtx.filter = `blur(${blurPx}px)`;
-                        smoothCtx.drawImage(canvas, 0, 0);
+                        const canFilter = typeof smoothCtx.filter === "string";
+                        if (canFilter) {
+                            smoothCtx.filter = `blur(${blurPx}px)`;
+                            smoothCtx.drawImage(canvas, 0, 0);
+                        } else {
+                            const softW = Math.max(1, Math.round(canvas.width * 0.72));
+                            const softH = Math.max(1, Math.round(canvas.height * 0.72));
+                            const downCanvas = document.createElement("canvas");
+                            downCanvas.width = softW;
+                            downCanvas.height = softH;
+                            const downCtx = downCanvas.getContext("2d");
+                            if (downCtx) {
+                                downCtx.imageSmoothingEnabled = true;
+                                downCtx.drawImage(canvas, 0, 0, softW, softH);
+                                smoothCtx.imageSmoothingEnabled = true;
+                                smoothCtx.drawImage(downCanvas, 0, 0, softW, softH, 0, 0, canvas.width, canvas.height);
+                            } else {
+                                smoothCtx.drawImage(canvas, 0, 0);
+                            }
+                        }
                         ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        ctx.imageSmoothingEnabled = true;
                         ctx.drawImage(smoothCanvas, 0, 0);
                     }
                 }
