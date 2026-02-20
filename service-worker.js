@@ -1,7 +1,7 @@
 /* eslint-disable no-restricted-globals */
 
-const CACHE_NAME = "alpenwetter-v20";
-const RUNTIME_CACHE = "alpenwetter-runtime-v18";
+const CACHE_NAME = "alpenwetter-v21";
+const RUNTIME_CACHE = "alpenwetter-runtime-v19";
 
 const APP_SHELL = [
     "./",
@@ -130,8 +130,8 @@ self.addEventListener("fetch", (event) => {
         return;
     }
 
-    // Don't cache map tiles (potentially unbounded).
-    if (url.hostname.endsWith("tile.openstreetmap.org")) {
+    // Don't cache map tiles (potentially unbounded and provider-side transient failures).
+    if (url.hostname.endsWith("tile.openstreetmap.org") || url.hostname.endsWith("basemaps.cartocdn.com")) {
         return;
     }
 

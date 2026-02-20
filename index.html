@@ -702,11 +702,11 @@
             box-shadow: var(--shadow-soft);
             border: 1px solid rgba(148, 163, 184, 0.24);
             background:
-                radial-gradient(700px 420px at 12% 8%, rgba(14, 116, 144, 0.24), transparent 66%),
-                radial-gradient(520px 340px at 88% 78%, rgba(30, 64, 175, 0.2), transparent 68%),
-                linear-gradient(180deg, #050a12 0%, #0a1523 100%);
+                radial-gradient(700px 420px at 12% 8%, rgba(125, 211, 252, 0.28), transparent 66%),
+                radial-gradient(520px 340px at 88% 78%, rgba(147, 197, 253, 0.24), transparent 68%),
+                linear-gradient(180deg, #d9e5f2 0%, #c6d8ea 100%);
             position: relative;
-            z-index: 0;
+            z-index: 3;
         }
 
         .map-panel {
@@ -736,9 +736,9 @@
             position: absolute;
             inset: 0;
             background:
-                radial-gradient(520px 300px at 12% 8%, rgba(56, 189, 248, 0.08), transparent 64%),
-                radial-gradient(420px 260px at 85% 86%, rgba(34, 211, 238, 0.08), transparent 64%),
-                linear-gradient(180deg, rgba(2, 6, 12, 0) 62%, rgba(2, 6, 12, 0.2) 100%);
+                radial-gradient(520px 300px at 12% 8%, rgba(56, 189, 248, 0.05), transparent 64%),
+                radial-gradient(420px 260px at 85% 86%, rgba(34, 211, 238, 0.04), transparent 64%),
+                linear-gradient(180deg, rgba(2, 6, 12, 0) 62%, rgba(2, 6, 12, 0.08) 100%);
             pointer-events: none;
             z-index: 1;
         }
@@ -2952,7 +2952,7 @@
                 unit: "km/h",
                 min: 0,
                 max: 60,
-                opacity: 0.65,
+                opacity: 0.52,
                 colors: ["#38bdf8", "#22d3ee", "#facc15", "#fb923c", "#ef4444"],
                 crs: "EPSG:4326",
                 bounds: GEO_BBOX_NWP,
@@ -2992,7 +2992,7 @@
                 unit: "mm",
                 min: 0,
                 max: 10,
-                opacity: 0.6,
+                opacity: 0.5,
                 colors: ["#0ea5e9", "#38bdf8", "#facc15", "#f97316", "#ef4444"],
                 crs: "EPSG:4326",
                 bounds: GEO_BBOX_NWP,
@@ -3020,7 +3020,7 @@
                 unit: "%",
                 min: 0,
                 max: 100,
-                opacity: 0.55,
+                opacity: 0.46,
                 colors: ["#0f172a", "#334155", "#94a3b8", "#e2e8f0"],
                 crs: "EPSG:4326",
                 bounds: GEO_BBOX_NWP,
@@ -3051,7 +3051,7 @@
                 unit: "mm",
                 min: 0,
                 max: 5,
-                opacity: 0.65,
+                opacity: 0.54,
                 colors: ["#0ea5e9", "#38bdf8", "#facc15", "#f97316", "#ef4444"],
                 crs: "EPSG:31287",
                 bounds: GEO_BBOX_NOWCAST,
@@ -3079,7 +3079,7 @@
                 unit: "/100",
                 min: 0,
                 max: 100,
-                opacity: 0.58,
+                opacity: 0.5,
                 colors: MAP_SCORE_COLORS,
                 crs: "EPSG:4326",
                 bounds: GEO_BBOX_NWP,
@@ -3117,7 +3117,7 @@
                 unit: "/100",
                 min: 0,
                 max: 100,
-                opacity: 0.58,
+                opacity: 0.5,
                 colors: MAP_SCORE_COLORS,
                 crs: "EPSG:4326",
                 bounds: GEO_BBOX_NWP,
@@ -3153,7 +3153,7 @@
                 unit: "/100",
                 min: 0,
                 max: 100,
-                opacity: 0.6,
+                opacity: 0.52,
                 colors: MAP_SCORE_COLORS,
                 crs: "EPSG:4326",
                 bounds: GEO_BBOX_NWP,
@@ -3191,7 +3191,7 @@
                 unit: "/100",
                 min: 0,
                 max: 100,
-                opacity: 0.58,
+                opacity: 0.5,
                 colors: MAP_SCORE_COLORS,
                 crs: "EPSG:4326",
                 bounds: GEO_BBOX_NWP,
@@ -8721,14 +8721,36 @@
             const lat = site ? site.lat : 47.0;
             const lon = site ? site.lon : 13.0;
             mapInstance = L.map("map", { preferCanvas: true }).setView([lat, lon], 8);
-            L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png", {
+            const primaryBaseLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+                maxZoom: 19,
+                subdomains: "abc",
+                attribution: "&copy; OpenStreetMap contributors",
+                updateWhenIdle: true,
+                keepBuffer: 2,
+                detectRetina: false,
+            });
+            const fallbackBaseLayer = L.tileLayer("https://{s}.basemaps.cartocdn.com/voyager/{z}/{x}/{y}.png", {
                 maxZoom: 19,
                 subdomains: "abcd",
                 attribution: "&copy; OpenStreetMap contributors &copy; CARTO",
                 updateWhenIdle: true,
                 keepBuffer: 2,
                 detectRetina: false,
-            }).addTo(mapInstance);
+            });
+            let baseTileErrorCount = 0;
+            let fallbackActive = false;
+            primaryBaseLayer.on("load", () => {
+                baseTileErrorCount = 0;
+            });
+            primaryBaseLayer.on("tileerror", () => {
+                baseTileErrorCount += 1;
+                if (fallbackActive || baseTileErrorCount < 8) return;
+                fallbackActive = true;
+                if (mapInstance.hasLayer(primaryBaseLayer)) mapInstance.removeLayer(primaryBaseLayer);
+                fallbackBaseLayer.addTo(mapInstance);
+                setMapMeta(MAP_OVERLAYS[mapOverlayKey] || MAP_OVERLAYS.wind, null, "Basemap Fallback");
+            });
+            primaryBaseLayer.addTo(mapInstance);
             markerInstance = L.marker([lat, lon]).addTo(mapInstance);
             mapInstance.on("moveend", () => scheduleMapOverlayUpdate(150, { keepIndex: true }));
             mapInstance.on("zoomend", () => scheduleMapOverlayUpdate(110, { keepIndex: true }));
