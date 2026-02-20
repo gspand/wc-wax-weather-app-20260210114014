@@ -3083,6 +3083,42 @@
         normalizeStaticDomText();
 
         const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+        const parseHexColor = (value) => {
+            if (typeof value !== "string") return null;
+            let hex = value.trim();
+            if (!hex.startsWith("#")) return null;
+            hex = hex.slice(1);
+            if (hex.length === 3) hex = hex.split("").map((ch) => ch + ch).join("");
+            if (!/^[0-9a-fA-F]{6}$/.test(hex)) return null;
+            const num = Number.parseInt(hex, 16);
+            return {
+                r: (num >> 16) & 255,
+                g: (num >> 8) & 255,
+                b: num & 255,
+            };
+        };
+        const colorRamp = (value, minValue, maxValue, colors) => {
+            if (!Array.isArray(colors) || !colors.length) return "rgba(0,0,0,0)";
+            if (!Number.isFinite(value)) return "rgba(0,0,0,0)";
+            const min = Number.isFinite(minValue) ? minValue : value;
+            const max = Number.isFinite(maxValue) ? maxValue : value;
+            if (max <= min) return colors[colors.length - 1] || colors[0];
+            if (colors.length === 1) return colors[0];
+
+            const t = clamp((value - min) / (max - min), 0, 1);
+            const scaled = t * (colors.length - 1);
+            const i0 = Math.floor(scaled);
+            const i1 = Math.min(colors.length - 1, i0 + 1);
+            const localT = scaled - i0;
+            const c0 = parseHexColor(colors[i0]);
+            const c1 = parseHexColor(colors[i1]);
+            if (!c0 || !c1) return colors[Math.round(scaled)] || colors[i0];
+
+            const r = Math.round(c0.r + (c1.r - c0.r) * localT);
+            const g = Math.round(c0.g + (c1.g - c0.g) * localT);
+            const b = Math.round(c0.b + (c1.b - c0.b) * localT);
+            return `rgb(${r}, ${g}, ${b})`;
+        };
         const avg = (arr) => {
             if (!Array.isArray(arr)) return null;
             const nums = arr.filter((v) => v !== null && v !== undefined && !Number.isNaN(v));
@@ -8548,4 +8584,3 @@
 </body>
 
 </html>
-
