@@ -7912,6 +7912,7 @@
                                             fetchBounds: bounds,
                                             paramsUsed: paramSet,
                                             samplePointCount: samplePoints.length,
+                                            wideViewMode,
                                         };
                                     }
                                     lastErr = new Error("overlay payload empty");
@@ -7944,6 +7945,7 @@
                                     fetchBounds: bounds,
                                     paramsUsed: paramSet,
                                     samplePointCount: null,
+                                    wideViewMode,
                                 };
                             }
                             lastErr = new Error("overlay payload empty");
@@ -8178,6 +8180,8 @@
                         const fetched = await fetchOverlayDataWithFallback(config, viewBboxLimited, limits, null);
                         const built = buildOverlayCache(fetched.data, fetched.fetchBounds, config);
                         if (!built || !built.points.length || !built.timestamps.length) continue;
+                        built.wideViewMode = !!fetched.wideViewMode;
+                        built.samplePointCount = Number.isFinite(fetched.samplePointCount) ? fetched.samplePointCount : null;
                         built.legendMeta = formatOverlayLegendMeta(built);
                         mapOverlayCache[key] = built;
                     } catch {
@@ -8240,8 +8244,17 @@
             }
             const previousTs = mapOverlayTimestamps[mapOverlayIndex] || null;
             const cached = mapOverlayCache[mapOverlayKey];
+            const zoomNow = mapInstance ? mapInstance.getZoom() : 8;
+            const detailViewMode = zoomNow > 9;
             const isFresh = cached && (Date.now() - cached.fetchedAt) < (config.ttlMs || 10 * 60 * 1000);
-            const canReuse = isFresh && bboxContains(cached.fetchBounds, viewBboxLimited);
+            const cachedCoarseForDetail = !!(
+                detailViewMode && cached && (
+                    cached.wideViewMode === true ||
+                    (Number.isFinite(cached.latStep) && cached.latStep > 0.05) ||
+                    (Number.isFinite(cached.lonStep) && cached.lonStep > 0.08)
+                )
+            );
+            const canReuse = isFresh && !cachedCoarseForDetail && bboxContains(cached.fetchBounds, viewBboxLimited);
             const forceFetch = !!opts.forceFetch;
             let layerCache = cached;
             if (canReuse && mapOverlayFetchController) {
@@ -8278,6 +8291,8 @@
                     const endTick = (typeof performance !== "undefined" && typeof performance.now === "function")
                         ? performance.now()
                         : Date.now();
+                    built.wideViewMode = !!fetched.wideViewMode;
+                    built.samplePointCount = Number.isFinite(fetched.samplePointCount) ? fetched.samplePointCount : null;
                     built.legendMeta = formatOverlayLegendMeta(built, endTick - startTick);
                     mapOverlayCache[mapOverlayKey] = built;
                     layerCache = built;
