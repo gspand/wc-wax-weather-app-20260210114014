@@ -717,10 +717,11 @@
             opacity: 0;
             transition: opacity 0.25s ease;
             mix-blend-mode: screen;
+            filter: saturate(1.3) contrast(1.12);
         }
 
         .map-windy-fx.active {
-            opacity: 0.74;
+            opacity: 0.9;
         }
 
         .map-panel {
@@ -8630,7 +8631,7 @@
             x: Math.random() * Math.max(1, width),
             y: Math.random() * Math.max(1, height),
             age: Math.random() * 2.5,
-            maxAge: 2.8 + Math.random() * 2.4,
+            maxAge: 3.6 + Math.random() * 3.1,
         });
 
         const sampleMapWindFxVector = (field, x, y) => {
@@ -8662,7 +8663,7 @@
             if (cache.windFxField && cache.windFxField.viewKey === viewKey) return cache.windFxField;
             const size = mapInstance.getSize();
             const isCoarse = !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
-            const maxSamples = isCoarse ? 1700 : 3000;
+            const maxSamples = isCoarse ? 2400 : 4200;
             const stride = Math.max(1, Math.ceil(cache.points.length / maxSamples));
             const bucketSize = isCoarse ? 26 : 22;
             const mapBounds = mapInstance.getBounds();
@@ -8752,13 +8753,15 @@
             ctx.save();
             ctx.setTransform(1, 0, 0, 1, 0, 0);
             ctx.globalCompositeOperation = "source-over";
-            ctx.fillStyle = "rgba(6, 15, 28, 0.1)";
+            ctx.fillStyle = "rgba(6, 15, 28, 0.06)";
             ctx.fillRect(0, 0, mapWindFxCanvas.width, mapWindFxCanvas.height);
             ctx.restore();
 
             ctx.save();
             ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-            const speedScale = 7 + mapInstance.getZoom() * 0.65;
+            const speedScale = 8.6 + mapInstance.getZoom() * 0.78;
+            ctx.shadowColor = "rgba(125, 211, 252, 0.72)";
+            ctx.shadowBlur = 6;
             for (let i = 0; i < mapWindFxParticles.length; i += 1) {
                 const p = mapWindFxParticles[i];
                 if (!p) continue;
@@ -8783,14 +8786,22 @@
                 p.x = x2;
                 p.y = y2;
                 const speed = Number.isFinite(vec.speed) ? vec.speed : 0;
-                const alpha = clamp(0.16 + speed * 0.055, 0.18, 0.74);
+                const alpha = clamp(0.28 + speed * 0.075, 0.32, 0.95);
                 const hue = clamp(208 - speed * 5.2, 176, 208);
                 ctx.strokeStyle = `hsla(${hue}, 90%, 82%, ${alpha})`;
-                ctx.lineWidth = clamp(0.6 + speed * 0.09, 0.6, 1.55);
+                ctx.lineWidth = clamp(0.95 + speed * 0.12, 0.95, 2.45);
                 ctx.beginPath();
                 ctx.moveTo(x1, y1);
                 ctx.lineTo(x2, y2);
                 ctx.stroke();
+                ctx.shadowBlur = 0;
+                ctx.strokeStyle = `hsla(${hue}, 100%, 93%, ${Math.min(1, alpha + 0.14)})`;
+                ctx.lineWidth = clamp(0.5 + speed * 0.05, 0.5, 1.15);
+                ctx.beginPath();
+                ctx.moveTo(x1, y1);
+                ctx.lineTo(x2, y2);
+                ctx.stroke();
+                ctx.shadowBlur = 6;
             }
             ctx.restore();
             mapWindFxRaf = requestAnimationFrame(tickMapWindFx);
@@ -8809,7 +8820,7 @@
                 return;
             }
             const isCoarse = !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
-            const targetCount = isCoarse ? 90 : 180;
+            const targetCount = isCoarse ? 150 : 320;
             if (!Array.isArray(mapWindFxParticles) || mapWindFxParticles.length !== targetCount) {
                 mapWindFxParticles = Array.from({ length: targetCount }, () => spawnMapWindFxParticle(dims.width, dims.height));
             }
