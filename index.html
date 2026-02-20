@@ -2985,7 +2985,7 @@
                 },
             },
             precip: {
-                label: "Regen (acc)",
+                label: "Regen (1h)",
                 resource: "nwp-v1-1h-2500m",
                 params: ["rr_acc"],
                 preferTimeseriesSample: false,
@@ -3010,7 +3010,13 @@
                 futureHours: 4,
                 maxTimeWindows: 1,
                 maxAttempts: 2,
-                value: (params, idx) => params.rr_acc?.data?.[idx] ?? null,
+                value: (params, idx) => {
+                    const curr = params.rr_acc?.data?.[idx];
+                    if (!Number.isFinite(curr)) return null;
+                    const prev = idx > 0 ? params.rr_acc?.data?.[idx - 1] : null;
+                    if (!Number.isFinite(prev)) return curr;
+                    return Math.max(0, curr - prev);
+                },
             },
             cloud: {
                 label: "Wolken",
@@ -3046,7 +3052,7 @@
                 },
             },
             nowcast: {
-                label: "Nowcast Regen",
+                label: "Nowcast Regen (15m)",
                 resource: "nowcast-v1-15min-1km",
                 params: ["rr"],
                 preferTimeseriesSample: false,
@@ -8409,7 +8415,7 @@
             const baseStride = Math.max(1, Math.ceil(cache.points.length / Math.max(2500, targetPoints)));
             let stride = config.smoothGradient ? Math.max(1, Math.floor(baseStride * 0.42)) : baseStride;
             if (config.smoothGradient) stride = Math.min(stride, 4);
-            const offset = stride > 1 ? (timeIndex % stride) : 0;
+            const offset = 0;
 
             ctx.globalAlpha = config.opacity;
             for (let i = offset; i < cache.points.length; i += stride) {
