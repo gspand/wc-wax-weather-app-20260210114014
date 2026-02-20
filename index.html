@@ -7846,7 +7846,7 @@
         const fetchOverlayDataWithFallback = async (config, viewBbox, limits, signal = null) => {
             const timeoutMs = Number.isFinite(config.fetchTimeoutMs) ? config.fetchTimeoutMs : FETCH_TIMEOUT_MS;
             const zoom = mapInstance ? mapInstance.getZoom() : 8;
-            const wideViewMode = zoom <= 9;
+            const wideViewMode = zoom <= 8;
             const basePad = Number.isFinite(config.padRatio) ? config.padRatio : 0.2;
             const zoomFactor = zoom >= 11 ? 0.78 : (zoom >= 9 ? 0.88 : 1);
             const effectivePad = Math.max(0.08, Math.min(0.3, basePad * zoomFactor));
@@ -8152,7 +8152,7 @@
 
         const limitOverlayViewBboxForConfig = (viewBbox, config, limits) => {
             const zoom = mapInstance ? mapInstance.getZoom() : 8;
-            if (zoom <= 9) return clampBbox(viewBbox, limits);
+            if (zoom <= 8) return clampBbox(viewBbox, limits);
             const spanFactor = overlaySpanFactorForZoom(zoom);
             const viewMaxSpanLat = Number.isFinite(config.maxSpanLat) ? config.maxSpanLat * spanFactor : null;
             const viewMaxSpanLon = Number.isFinite(config.maxSpanLon) ? config.maxSpanLon * spanFactor : null;
@@ -8245,7 +8245,7 @@
             const previousTs = mapOverlayTimestamps[mapOverlayIndex] || null;
             const cached = mapOverlayCache[mapOverlayKey];
             const zoomNow = mapInstance ? mapInstance.getZoom() : 8;
-            const detailViewMode = zoomNow > 9;
+            const detailViewMode = zoomNow > 8;
             const isFresh = cached && (Date.now() - cached.fetchedAt) < (config.ttlMs || 10 * 60 * 1000);
             const cachedCoarseForDetail = !!(
                 detailViewMode && cached && (
