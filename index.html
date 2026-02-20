@@ -701,7 +701,10 @@
             overflow: hidden;
             box-shadow: var(--shadow-soft);
             border: 1px solid rgba(148, 163, 184, 0.24);
-            background: #0a101a;
+            background:
+                radial-gradient(700px 420px at 12% 8%, rgba(14, 116, 144, 0.24), transparent 66%),
+                radial-gradient(520px 340px at 88% 78%, rgba(30, 64, 175, 0.2), transparent 68%),
+                linear-gradient(180deg, #050a12 0%, #0a1523 100%);
             position: relative;
             z-index: 0;
         }
@@ -769,9 +772,10 @@
         }
 
         .map-layer-btn.active {
-            border-color: rgba(94, 234, 212, 0.6);
-            background: linear-gradient(135deg, rgba(94, 234, 212, 0.28), rgba(96, 165, 250, 0.2));
-            box-shadow: 0 12px 26px rgba(4, 10, 20, 0.45);
+            border-color: rgba(125, 211, 252, 0.78);
+            background: linear-gradient(135deg, rgba(14, 165, 233, 0.34), rgba(59, 130, 246, 0.24));
+            color: #eff8ff;
+            box-shadow: 0 12px 28px rgba(3, 12, 24, 0.56);
         }
 
         .map-layer-btn:hover {
@@ -875,6 +879,32 @@
             backdrop-filter: blur(8px);
             min-width: 160px;
             z-index: 1200;
+        }
+
+        #map .leaflet-control-zoom {
+            border: 1px solid rgba(125, 211, 252, 0.26);
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 10px 22px rgba(3, 10, 20, 0.52);
+        }
+
+        #map .leaflet-control-zoom a {
+            background: rgba(7, 16, 30, 0.9);
+            color: #dbeafe;
+            border-bottom: 1px solid rgba(125, 211, 252, 0.2);
+        }
+
+        #map .leaflet-control-zoom a:hover {
+            background: rgba(15, 31, 56, 0.96);
+            color: #f8fafc;
+        }
+
+        #map .leaflet-control-attribution {
+            background: rgba(7, 16, 30, 0.74);
+            color: rgba(191, 219, 254, 0.82);
+            border-radius: 8px 0 0 0;
+            font-size: 10px;
+            letter-spacing: 0.03em;
         }
 
         .map-legend-title {
@@ -1595,6 +1625,10 @@
                         <button class="map-layer-btn" data-layer="precip" type="button">Regen</button>
                         <button class="map-layer-btn" data-layer="cloud" type="button">Wolken</button>
                         <button class="map-layer-btn" data-layer="nowcast" type="button">Nowcast</button>
+                        <button class="map-layer-btn" data-layer="paragliding_score" type="button">Paragleiten Score</button>
+                        <button class="map-layer-btn" data-layer="cycling_score" type="button">Radfahren Score</button>
+                        <button class="map-layer-btn" data-layer="xc_score" type="button">Langlauf Score</button>
+                        <button class="map-layer-btn" data-layer="skitour_score" type="button">Skitour Score</button>
                     </div>
                 </div>
                 <div class="map-time">
@@ -2883,6 +2917,31 @@
         const MAP_FETCH_TARGET_POINTS = { high: 96, mid: 72, low: 56 };
         const GEO_BBOX_NWP = { south: 42.981, west: 5.498, north: 51.819, east: 22.102 };
         const GEO_BBOX_NOWCAST = { south: 45.50288351657135, west: 8.098133748352293, north: 49.47817568460958, east: 17.742270413233744 };
+        const PROJ4_DEFS = {
+            "EPSG:31287": "+proj=lcc +lat_0=47.5 +lon_0=13.3333333333333 +lat_1=49 +lat_2=46 +x_0=400000 +y_0=400000 +ellps=bessel +towgs84=577.326,90.129,463.919,5.137,1.474,5.297,2.4232 +units=m +no_defs +type=crs",
+        };
+        const MAP_SCORE_COLORS = ["#ef4444", "#f97316", "#facc15", "#4ade80", "#16a34a"];
+        const overlayWindKmh = (params, idx) => {
+            const u = params.u10m?.data?.[idx];
+            const v = params.v10m?.data?.[idx];
+            if (!Number.isFinite(u) || !Number.isFinite(v)) return null;
+            return Math.sqrt(u * u + v * v) * 3.6;
+        };
+        const overlayGustKmh = (params, idx) => {
+            const ug = params.ugust?.data?.[idx];
+            const vg = params.vgust?.data?.[idx];
+            if (Number.isFinite(ug) && Number.isFinite(vg)) return Math.sqrt(ug * ug + vg * vg) * 3.6;
+            const ff = params.ff?.data?.[idx];
+            const fx = params.fx?.data?.[idx];
+            if (Number.isFinite(fx)) return fx * 3.6;
+            if (Number.isFinite(ff)) return ff * 3.6;
+            return null;
+        };
+        const overlayCloudPct = (params, idx) => {
+            const raw = params.tcc?.data?.[idx];
+            if (!Number.isFinite(raw)) return null;
+            return raw <= 1 ? raw * 100 : raw;
+        };
         const MAP_OVERLAYS = {
             wind: {
                 label: "Wind 10m",
@@ -3001,8 +3060,8 @@
                 targetKey: "mid",
                 maxSpanLat: 0.9,
                 maxSpanLon: 1.2,
-                fetchMaxSpanLat: 1.2,
-                fetchMaxSpanLon: 1.6,
+                fetchMaxSpanLat: 2.0,
+                fetchMaxSpanLon: 2.8,
                 fetchTimeoutMs: 12000,
                 pastHours: 0.15,
                 futureHours: 0.75,
@@ -3010,6 +3069,157 @@
                 maxAttempts: 2,
                 disableBoundFallback: true,
                 value: (params, idx) => params.rr?.data?.[idx] ?? null,
+            },
+            paragliding_score: {
+                label: "Paragleiten Score",
+                resource: "nwp-v1-1h-2500m",
+                params: ["u10m", "v10m", "ugust", "vgust", "tcc", "rr_acc"],
+                preferTimeseriesSample: false,
+                smoothGradient: true,
+                unit: "/100",
+                min: 0,
+                max: 100,
+                opacity: 0.58,
+                colors: MAP_SCORE_COLORS,
+                crs: "EPSG:4326",
+                bounds: GEO_BBOX_NWP,
+                ttlMs: 20 * 60 * 1000,
+                padRatio: 0.14,
+                targetKey: "high",
+                maxSpanLat: 2.0,
+                maxSpanLon: 2.8,
+                fetchMaxSpanLat: 2.8,
+                fetchMaxSpanLon: 3.8,
+                fetchTimeoutMs: 8500,
+                pastHours: 0.15,
+                futureHours: 4,
+                maxTimeWindows: 1,
+                maxAttempts: 2,
+                value: (params, idx) => {
+                    const windKmh = overlayWindKmh(params, idx);
+                    if (!Number.isFinite(windKmh)) return null;
+                    const gustKmh = overlayGustKmh(params, idx) ?? windKmh;
+                    const cloudPct = overlayCloudPct(params, idx);
+                    const rain = params.rr_acc?.data?.[idx];
+                    const windPenalty = clamp((windKmh - 8) / 24, 0, 1) * 45;
+                    const gustPenalty = clamp((gustKmh - 14) / 24, 0, 1) * 30;
+                    const rainPenalty = Number.isFinite(rain) ? clamp(rain / 1.8, 0, 1) * 20 : 0;
+                    const cloudPenalty = Number.isFinite(cloudPct) ? clamp((cloudPct - 55) / 45, 0, 1) * 15 : 0;
+                    return clamp(100 - windPenalty - gustPenalty - rainPenalty - cloudPenalty, 0, 100);
+                },
+            },
+            cycling_score: {
+                label: "Radfahren Score",
+                resource: "nwp-v1-1h-2500m",
+                params: ["u10m", "v10m", "rr_acc", "t2m"],
+                preferTimeseriesSample: false,
+                smoothGradient: true,
+                unit: "/100",
+                min: 0,
+                max: 100,
+                opacity: 0.58,
+                colors: MAP_SCORE_COLORS,
+                crs: "EPSG:4326",
+                bounds: GEO_BBOX_NWP,
+                ttlMs: 20 * 60 * 1000,
+                padRatio: 0.14,
+                targetKey: "high",
+                maxSpanLat: 2.0,
+                maxSpanLon: 2.8,
+                fetchMaxSpanLat: 2.8,
+                fetchMaxSpanLon: 3.8,
+                fetchTimeoutMs: 8500,
+                pastHours: 0.15,
+                futureHours: 4,
+                maxTimeWindows: 1,
+                maxAttempts: 2,
+                value: (params, idx) => {
+                    const windKmh = overlayWindKmh(params, idx);
+                    const tempC = params.t2m?.data?.[idx];
+                    if (!Number.isFinite(windKmh) || !Number.isFinite(tempC)) return null;
+                    const rain = params.rr_acc?.data?.[idx];
+                    const tempPenalty = clamp(Math.abs(tempC - 17) / 16, 0, 1) * 30;
+                    const windPenalty = clamp((windKmh - 18) / 28, 0, 1) * 25;
+                    const rainPenalty = Number.isFinite(rain) ? clamp(rain / 2.5, 0, 1) * 45 : 0;
+                    return clamp(100 - tempPenalty - windPenalty - rainPenalty, 0, 100);
+                },
+            },
+            xc_score: {
+                label: "Langlauf Score",
+                resource: "nwp-v1-1h-2500m",
+                params: ["u10m", "v10m", "rr_acc", "snow_acc", "t2m"],
+                preferTimeseriesSample: false,
+                smoothGradient: true,
+                unit: "/100",
+                min: 0,
+                max: 100,
+                opacity: 0.6,
+                colors: MAP_SCORE_COLORS,
+                crs: "EPSG:4326",
+                bounds: GEO_BBOX_NWP,
+                ttlMs: 20 * 60 * 1000,
+                padRatio: 0.14,
+                targetKey: "high",
+                maxSpanLat: 2.0,
+                maxSpanLon: 2.8,
+                fetchMaxSpanLat: 2.8,
+                fetchMaxSpanLon: 3.8,
+                fetchTimeoutMs: 8500,
+                pastHours: 0.15,
+                futureHours: 4,
+                maxTimeWindows: 1,
+                maxAttempts: 2,
+                value: (params, idx) => {
+                    const windKmh = overlayWindKmh(params, idx);
+                    const tempC = params.t2m?.data?.[idx];
+                    if (!Number.isFinite(windKmh) || !Number.isFinite(tempC)) return null;
+                    const rain = params.rr_acc?.data?.[idx];
+                    const snow = params.snow_acc?.data?.[idx];
+                    const tempPenalty = clamp(Math.abs(tempC + 3) / 9, 0, 1) * 28;
+                    const windPenalty = clamp((windKmh - 16) / 24, 0, 1) * 20;
+                    const rainPenalty = Number.isFinite(rain) ? clamp(rain / 0.7, 0, 1) * 45 : 0;
+                    const snowBoost = Number.isFinite(snow) ? clamp(snow * 8, 0, 16) : 0;
+                    return clamp(82 + snowBoost - tempPenalty - windPenalty - rainPenalty, 0, 100);
+                },
+            },
+            skitour_score: {
+                label: "Skitour Score",
+                resource: "nwp-v1-1h-2500m",
+                params: ["u10m", "v10m", "rr_acc", "snow_acc", "t2m"],
+                preferTimeseriesSample: false,
+                smoothGradient: true,
+                unit: "/100",
+                min: 0,
+                max: 100,
+                opacity: 0.58,
+                colors: MAP_SCORE_COLORS,
+                crs: "EPSG:4326",
+                bounds: GEO_BBOX_NWP,
+                ttlMs: 20 * 60 * 1000,
+                padRatio: 0.14,
+                targetKey: "high",
+                maxSpanLat: 2.0,
+                maxSpanLon: 2.8,
+                fetchMaxSpanLat: 2.8,
+                fetchMaxSpanLon: 3.8,
+                fetchTimeoutMs: 8500,
+                pastHours: 0.15,
+                futureHours: 4,
+                maxTimeWindows: 1,
+                maxAttempts: 2,
+                value: (params, idx) => {
+                    const windKmh = overlayWindKmh(params, idx);
+                    const tempC = params.t2m?.data?.[idx];
+                    if (!Number.isFinite(windKmh) || !Number.isFinite(tempC)) return null;
+                    const rain = params.rr_acc?.data?.[idx];
+                    const snow = params.snow_acc?.data?.[idx];
+                    const windPenalty = clamp((windKmh - 22) / 30, 0, 1) * 22;
+                    const rainPenalty = Number.isFinite(rain) ? clamp(rain / 1.2, 0, 1) * 38 : 0;
+                    const warmPenalty = clamp((tempC + 1.5) / 7, 0, 1) * 22;
+                    const coldPenalty = clamp((-tempC - 15) / 10, 0, 1) * 10;
+                    const snowBoost = Number.isFinite(snow) ? clamp(snow * 10, 0, 28) : 0;
+                    return clamp(55 + snowBoost - windPenalty - rainPenalty - warmPenalty - coldPenalty, 0, 100);
+                },
             },
         };
         let thermikHoverState = null;
@@ -7540,6 +7750,56 @@
 
         const toBboxString = (bbox) => `${bbox.south},${bbox.west},${bbox.north},${bbox.east}`;
 
+        const ensureProjDefinition = (code) => {
+            if (!code || typeof proj4 !== "function") return false;
+            const def = PROJ4_DEFS[code];
+            if (!def) return true;
+            try {
+                if (!proj4.defs(code)) proj4.defs(code, def);
+                return true;
+            } catch {
+                return false;
+            }
+        };
+
+        const transformPointCrs = (point, fromCrs, toCrs) => {
+            if (!point || !fromCrs || !toCrs || fromCrs === toCrs) return point;
+            if (typeof proj4 !== "function") return null;
+            ensureProjDefinition(fromCrs);
+            ensureProjDefinition(toCrs);
+            try {
+                const out = proj4(fromCrs, toCrs, [point.x, point.y]);
+                const x = Number(out?.[0]);
+                const y = Number(out?.[1]);
+                if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+                return { x, y };
+            } catch {
+                return null;
+            }
+        };
+
+        const transformBboxCrs = (bbox, fromCrs, toCrs) => {
+            if (!bbox || !fromCrs || !toCrs || fromCrs === toCrs) return bbox;
+            const corners = [
+                { x: bbox.west, y: bbox.south },
+                { x: bbox.west, y: bbox.north },
+                { x: bbox.east, y: bbox.south },
+                { x: bbox.east, y: bbox.north },
+            ];
+            const projected = corners
+                .map((corner) => transformPointCrs(corner, fromCrs, toCrs))
+                .filter(Boolean);
+            if (projected.length !== 4) return null;
+            const xs = projected.map((p) => p.x);
+            const ys = projected.map((p) => p.y);
+            return {
+                south: Math.min(...ys),
+                west: Math.min(...xs),
+                north: Math.max(...ys),
+                east: Math.max(...xs),
+            };
+        };
+
         const getMapViewBbox = () => {
             if (!mapInstance) return null;
             const bounds = mapInstance.getBounds();
@@ -7573,10 +7833,14 @@
         const mapRenderTargetForConfig = (config, zoom) => {
             const targetKey = config?.targetKey || "mid";
             const base = MAP_RENDER_TARGET_POINTS[targetKey] || MAP_RENDER_TARGET_POINTS.mid;
-            if (zoom >= 11) return Math.round(base * 1.35);
-            if (zoom >= 9) return base;
-            if (zoom >= 7) return Math.round(base * 0.8);
-            return Math.round(base * 0.6);
+            let factor = 0.6;
+            if (zoom >= 11) factor = 1.35;
+            else if (zoom >= 9) factor = 1;
+            else if (zoom >= 7) factor = 0.8;
+            if (config?.smoothGradient && window.matchMedia && window.matchMedia("(pointer: coarse)").matches) {
+                factor *= 1.3;
+            }
+            return Math.max(2200, Math.round(base * factor));
         };
 
         const mapFetchTargetForConfig = (config, zoom) => {
@@ -7598,6 +7862,9 @@
             else if (zoom >= 7) scale = 0.84;
             if (targetKey === "high") scale += 0.03;
             if (targetKey === "low") scale -= 0.05;
+            if (config?.smoothGradient && window.matchMedia && window.matchMedia("(pointer: coarse)").matches) {
+                scale = Math.max(scale, 0.92);
+            }
             return Math.max(0.62, Math.min(1, scale));
         };
 
@@ -7629,6 +7896,7 @@
             if (typeof proj4 === "function") {
                 for (const src of candidates) {
                     if (!src || src === "EPSG:4326") continue;
+                    ensureProjDefinition(src);
                     try {
                         const ll = proj4(src, "EPSG:4326", [x, y]);
                         const lon = Number(ll?.[0]);
@@ -7790,10 +8058,14 @@
             startIso = null,
             endIso = null,
             signal = null,
+            requestCrs = null,
         ) => {
+            const bboxForRequest = requestCrs && requestCrs !== "EPSG:4326"
+                ? (transformBboxCrs(bbox, "EPSG:4326", requestCrs) || bbox)
+                : bbox;
             const query = {
                 parameters: params,
-                bbox: toBboxString(bbox),
+                bbox: toBboxString(bboxForRequest),
                 output_format: "geojson",
             };
             if (startIso) query.start = startIso;
@@ -7924,15 +8196,16 @@
             startIso = null,
             endIso = null,
             signal = null,
+            requestCrs = null,
         ) => {
             const tiles = splitBboxIntoTiles(bbox, tileMaxLatSpan, tileMaxLonSpan);
             if (tiles.length <= 1) {
-                return fetchGeosphereGridForecast(resourceId, params, bbox, timeoutMs, startIso, endIso, signal);
+                return fetchGeosphereGridForecast(resourceId, params, bbox, timeoutMs, startIso, endIso, signal, requestCrs);
             }
             const payloads = [];
             for (const tile of tiles) {
                 if (signal?.aborted) throw new Error("overlay request aborted");
-                const payload = await fetchGeosphereGridForecast(resourceId, params, tile, timeoutMs, startIso, endIso, signal);
+                const payload = await fetchGeosphereGridForecast(resourceId, params, tile, timeoutMs, startIso, endIso, signal, requestCrs);
                 if (hasOverlayPayload(payload)) payloads.push(payload);
             }
             const merged = mergeOverlayPayloads(payloads);
@@ -7988,6 +8261,7 @@
                                 tw.startIso,
                                 tw.endIso,
                                 signal,
+                                config.requestCrs || null,
                             );
                             if (hasOverlayPayload(data)) {
                                 return {
@@ -8414,6 +8688,8 @@
             scheduleMapOverlayPrefetch(viewBboxRaw, mapOverlayKey);
         };
 
+        ensureProjDefinition("EPSG:31287");
+
         const scheduleMapOverlayUpdate = (delayMs = 180, opts = {}) => {
             if (mapOverlayTimer) clearTimeout(mapOverlayTimer);
             mapOverlayTimer = setTimeout(() => {
@@ -8433,9 +8709,16 @@
             const lat = site ? site.lat : 47.0;
             const lon = site ? site.lon : 13.0;
             mapInstance = L.map("map", { preferCanvas: true }).setView([lat, lon], 8);
-            L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-                maxZoom: 18,
-                attribution: "&copy; OpenStreetMap contributors",
+            L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png", {
+                maxZoom: 20,
+                subdomains: "abcd",
+                attribution: "&copy; OpenStreetMap contributors &copy; CARTO",
+            }).addTo(mapInstance);
+            L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png", {
+                maxZoom: 20,
+                subdomains: "abcd",
+                attribution: "&copy; OpenStreetMap contributors &copy; CARTO",
+                pane: "overlayPane",
             }).addTo(mapInstance);
             markerInstance = L.marker([lat, lon]).addTo(mapInstance);
             mapInstance.on("moveend", () => scheduleMapOverlayUpdate(150, { keepIndex: true }));
