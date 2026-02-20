@@ -2987,7 +2987,7 @@
             precip: {
                 label: "Regen (1h)",
                 resource: "nwp-v1-1h-2500m",
-                params: ["rr_acc"],
+                params: ["rain_acc", "rr_acc"],
                 preferTimeseriesSample: false,
                 smoothGradient: true,
                 unit: "mm",
@@ -3011,11 +3011,17 @@
                 maxTimeWindows: 1,
                 maxAttempts: 2,
                 value: (params, idx) => {
-                    const curr = params.rr_acc?.data?.[idx];
-                    if (!Number.isFinite(curr)) return null;
-                    const prev = idx > 0 ? params.rr_acc?.data?.[idx - 1] : null;
-                    if (!Number.isFinite(prev)) return curr;
-                    return Math.max(0, curr - prev);
+                    const currRain = params.rain_acc?.data?.[idx];
+                    const prevRain = idx > 0 ? params.rain_acc?.data?.[idx - 1] : null;
+                    if (Number.isFinite(currRain)) {
+                        if (Number.isFinite(prevRain)) return Math.max(0, currRain - prevRain);
+                        return currRain;
+                    }
+                    const currTotal = params.rr_acc?.data?.[idx];
+                    if (!Number.isFinite(currTotal)) return null;
+                    const prevTotal = idx > 0 ? params.rr_acc?.data?.[idx - 1] : null;
+                    if (!Number.isFinite(prevTotal)) return currTotal;
+                    return Math.max(0, currTotal - prevTotal);
                 },
             },
             cloud: {
@@ -3052,14 +3058,14 @@
                 },
             },
             nowcast: {
-                label: "Nowcast Regen (15m)",
+                label: "Nowcast Regen (1h eq)",
                 resource: "nowcast-v1-15min-1km",
                 params: ["rr"],
                 preferTimeseriesSample: false,
                 smoothGradient: true,
-                unit: "mm",
+                unit: "mm/h",
                 min: 0,
-                max: 5,
+                max: 20,
                 opacity: 0.54,
                 colors: ["#0ea5e9", "#38bdf8", "#facc15", "#f97316", "#ef4444"],
                 crs: "EPSG:31287",
@@ -3078,7 +3084,12 @@
                 maxTimeWindows: 1,
                 maxAttempts: 2,
                 disableBoundFallback: true,
-                value: (params, idx) => params.rr?.data?.[idx] ?? null,
+                value: (params, idx) => {
+                    const raw15m = params.rr?.data?.[idx];
+                    if (!Number.isFinite(raw15m)) return null;
+                    // Nowcast rr is a 15-minute amount -> scale to hourly equivalent.
+                    return raw15m * 4;
+                },
             },
             paragliding_score: {
                 label: "Paragleiten Score",
