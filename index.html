@@ -702,12 +702,15 @@
             box-shadow: var(--shadow-soft);
             border: 1px solid rgba(148, 163, 184, 0.24);
             background: #0a101a;
+            position: relative;
+            z-index: 0;
         }
 
         .map-panel {
             min-height: 420px;
             position: relative;
             overflow: hidden;
+            isolation: isolate;
         }
 
         .map-panel.map-panel-full {
@@ -871,7 +874,7 @@
             box-shadow: 0 14px 28px rgba(4, 10, 20, 0.45);
             backdrop-filter: blur(8px);
             min-width: 160px;
-            z-index: 3;
+            z-index: 1200;
         }
 
         .map-legend-title {
@@ -2885,6 +2888,7 @@
                 label: "Wind 10m",
                 resource: "nwp-v1-1h-2500m",
                 params: ["u10m", "v10m"],
+                preferTimeseriesSample: false,
                 unit: "km/h",
                 min: 0,
                 max: 60,
@@ -2923,6 +2927,7 @@
                 label: "Regen (acc)",
                 resource: "nwp-v1-1h-2500m",
                 params: ["rr_acc"],
+                preferTimeseriesSample: false,
                 unit: "mm",
                 min: 0,
                 max: 10,
@@ -2949,6 +2954,7 @@
                 resource: "nwp-v1-1h-2500m",
                 params: ["tcc"],
                 paramCandidates: [["tcc"]],
+                preferTimeseriesSample: false,
                 unit: "%",
                 min: 0,
                 max: 100,
@@ -2978,6 +2984,7 @@
                 label: "Nowcast Regen",
                 resource: "nowcast-v1-15min-1km",
                 params: ["rr"],
+                preferTimeseriesSample: false,
                 unit: "mm",
                 min: 0,
                 max: 5,
@@ -7638,6 +7645,16 @@
             const points = Array.isArray(cache.points) ? cache.points.length : 0;
             const frames = Array.isArray(cache.timestamps) ? cache.timestamps.length : 0;
             const parts = [];
+            const centerLat = Number.isFinite(cache?.fetchBounds?.north) && Number.isFinite(cache?.fetchBounds?.south)
+                ? (cache.fetchBounds.north + cache.fetchBounds.south) * 0.5
+                : 47;
+            const latKm = Number.isFinite(cache?.latStep) ? Math.abs(cache.latStep) * 111.32 : null;
+            const lonKm = Number.isFinite(cache?.lonStep)
+                ? Math.abs(cache.lonStep) * 111.32 * Math.max(0.2, Math.cos(centerLat * Math.PI / 180))
+                : null;
+            if (Number.isFinite(latKm) && Number.isFinite(lonKm)) {
+                parts.push(`Raster ~${latKm.toFixed(1)} x ${lonKm.toFixed(1)} km`);
+            }
             if (points > 0) parts.push(`${points.toLocaleString("de-AT")} Punkte`);
             if (frames > 0) parts.push(`${frames} Frames`);
             if (Number.isFinite(fetchMs) && fetchMs > 0) parts.push(`${Math.round(fetchMs)} ms`);
