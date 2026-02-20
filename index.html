@@ -709,6 +709,20 @@
             z-index: 3;
         }
 
+        .map-windy-fx {
+            position: absolute;
+            inset: 0;
+            z-index: 640;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.25s ease;
+            mix-blend-mode: screen;
+        }
+
+        .map-windy-fx.active {
+            opacity: 0.74;
+        }
+
         .map-panel {
             min-height: 420px;
             position: relative;
@@ -879,6 +893,32 @@
             backdrop-filter: blur(8px);
             min-width: 160px;
             z-index: 1200;
+        }
+
+        .map-windy-signature {
+            position: absolute;
+            right: 16px;
+            bottom: 16px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            border: 1px solid rgba(125, 211, 252, 0.34);
+            background: rgba(6, 20, 35, 0.72);
+            color: rgba(220, 240, 255, 0.88);
+            font-size: 10px;
+            letter-spacing: 0.22em;
+            text-transform: uppercase;
+            backdrop-filter: blur(8px);
+            box-shadow: 0 10px 20px rgba(3, 10, 20, 0.44);
+            opacity: 0;
+            transform: translateY(6px);
+            transition: opacity 0.22s ease, transform 0.22s ease;
+            z-index: 1200;
+            pointer-events: none;
+        }
+
+        .map-windy-signature.active {
+            opacity: 1;
+            transform: translateY(0);
         }
 
         #map .leaflet-control-zoom {
@@ -1642,6 +1682,7 @@
                 <div class="panel map-panel map-panel-full">
                     <div id="map"></div>
                     <div class="map-legend" id="mapLegend"></div>
+                    <div class="map-windy-signature" id="mapWindySignature">Wind Flow</div>
                 </div>
             </section>
         </section>
@@ -2894,6 +2935,7 @@
         const mapTimeRange = document.getElementById("mapTimeRange");
         const mapTimeLabel = document.getElementById("mapTimeLabel");
         const mapPlayBtn = document.getElementById("mapPlayBtn");
+        const mapWindySignature = document.getElementById("mapWindySignature");
 
         let currentPayload = null;
         let mapInstance = null;
@@ -2911,6 +2953,12 @@
         let mapOverlayLegendMeta = "";
         let mapPlayTimer = null;
         let mapPlayActive = false;
+        let mapWindFxCanvas = null;
+        let mapWindFxCtx = null;
+        let mapWindFxRaf = null;
+        let mapWindFxActive = false;
+        let mapWindFxParticles = [];
+        let mapWindFxLastMs = 0;
         const MAP_PLAY_INTERVAL_MS = 850;
         const MAP_FRAME_CACHE_LIMIT = 28;
         const MAP_RENDER_TARGET_POINTS = { high: 20000, mid: 13000, low: 7500 };
@@ -7703,6 +7751,7 @@
             if (target === "map") {
                 scheduleMapOverlayUpdate(40, { keepIndex: true });
             } else {
+                stopMapWindFx();
                 stopMapPlay();
             }
             if (target === "paragliding") {
@@ -8398,6 +8447,232 @@
             drawSegment("rgba(236, 246, 255, 0.92)", 1.2);
         };
 
+        const ensureMapWindFxCanvas = () => {
+            if (!mapInstance) return null;
+            const container = mapInstance.getContainer();
+            if (!container) return null;
+            if (!mapWindFxCanvas) {
+                mapWindFxCanvas = document.createElement("canvas");
+                mapWindFxCanvas.className = "map-windy-fx";
+                container.appendChild(mapWindFxCanvas);
+                mapWindFxCtx = mapWindFxCanvas.getContext("2d");
+            } else if (mapWindFxCanvas.parentElement !== container) {
+                container.appendChild(mapWindFxCanvas);
+            }
+            const size = mapInstance.getSize();
+            const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+            const targetW = Math.max(1, Math.round(size.x * dpr));
+            const targetH = Math.max(1, Math.round(size.y * dpr));
+            if (mapWindFxCanvas.width !== targetW || mapWindFxCanvas.height !== targetH) {
+                mapWindFxCanvas.width = targetW;
+                mapWindFxCanvas.height = targetH;
+                mapWindFxCanvas.style.width = `${size.x}px`;
+                mapWindFxCanvas.style.height = `${size.y}px`;
+            }
+            mapWindFxCanvas.dataset.dpr = String(dpr);
+            return { width: size.x, height: size.y, dpr };
+        };
+
+        const clearMapWindFxCanvas = () => {
+            if (!mapWindFxCtx || !mapWindFxCanvas) return;
+            mapWindFxCtx.setTransform(1, 0, 0, 1, 0, 0);
+            mapWindFxCtx.clearRect(0, 0, mapWindFxCanvas.width, mapWindFxCanvas.height);
+        };
+
+        const spawnMapWindFxParticle = (width, height) => ({
+            x: Math.random() * Math.max(1, width),
+            y: Math.random() * Math.max(1, height),
+            age: Math.random() * 2.5,
+            maxAge: 2.8 + Math.random() * 2.4,
+        });
+
+        const sampleMapWindFxVector = (field, x, y) => {
+            if (!field || !field.cells || !field.cells.size) return null;
+            const bx = Math.floor(x / field.bucketSize);
+            const by = Math.floor(y / field.bucketSize);
+            let sumU = 0;
+            let sumV = 0;
+            let sumSpeed = 0;
+            let sumW = 0;
+            for (let oy = -1; oy <= 1; oy += 1) {
+                for (let ox = -1; ox <= 1; ox += 1) {
+                    const entry = field.cells.get(`${bx + ox}:${by + oy}`);
+                    if (!entry) continue;
+                    const weight = (ox === 0 && oy === 0) ? 1 : 0.58;
+                    sumU += entry.u * weight;
+                    sumV += entry.v * weight;
+                    sumSpeed += entry.speed * weight;
+                    sumW += weight;
+                }
+            }
+            if (sumW <= 0) return null;
+            return { u: sumU / sumW, v: sumV / sumW, speed: sumSpeed / sumW };
+        };
+
+        const buildMapWindFxField = (cache, timeIndex) => {
+            if (!mapInstance || !cache || !Array.isArray(cache.points)) return null;
+            const viewKey = `${overlayViewSignature()}|${timeIndex}`;
+            if (cache.windFxField && cache.windFxField.viewKey === viewKey) return cache.windFxField;
+            const size = mapInstance.getSize();
+            const isCoarse = !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
+            const maxSamples = isCoarse ? 1700 : 3000;
+            const stride = Math.max(1, Math.ceil(cache.points.length / maxSamples));
+            const bucketSize = isCoarse ? 26 : 22;
+            const mapBounds = mapInstance.getBounds();
+            const padLat = Math.max(0.03, (cache.latStep || 0.02) * 1.8);
+            const padLon = Math.max(0.03, (cache.lonStep || 0.02) * 1.8);
+            const south = mapBounds.getSouth();
+            const west = mapBounds.getWest();
+            const north = mapBounds.getNorth();
+            const east = mapBounds.getEast();
+            const accum = new Map();
+            for (let i = 0; i < cache.points.length; i += stride) {
+                const pt = cache.points[i];
+                if (!pt) continue;
+                if (pt.lat < south - padLat || pt.lat > north + padLat || pt.lon < west - padLon || pt.lon > east + padLon) continue;
+                const vec = MAP_OVERLAYS.wind?.vector ? MAP_OVERLAYS.wind.vector(pt.params, timeIndex) : null;
+                if (!vec) continue;
+                const speed = Math.sqrt((vec.u || 0) * (vec.u || 0) + (vec.v || 0) * (vec.v || 0));
+                if (!Number.isFinite(speed) || speed < 0.28) continue;
+                const xy = mapInstance.latLngToContainerPoint([pt.lat, pt.lon]);
+                if (xy.x < -18 || xy.x > size.x + 18 || xy.y < -18 || xy.y > size.y + 18) continue;
+                const bx = Math.floor(xy.x / bucketSize);
+                const by = Math.floor(xy.y / bucketSize);
+                const key = `${bx}:${by}`;
+                const entry = accum.get(key) || { u: 0, v: 0, speed: 0, count: 0 };
+                entry.u += vec.u;
+                entry.v += vec.v;
+                entry.speed += speed;
+                entry.count += 1;
+                accum.set(key, entry);
+            }
+            const cells = new Map();
+            for (const [key, entry] of accum.entries()) {
+                if (!entry.count) continue;
+                cells.set(key, {
+                    u: entry.u / entry.count,
+                    v: entry.v / entry.count,
+                    speed: entry.speed / entry.count,
+                });
+            }
+            const field = { viewKey, bucketSize, width: size.x, height: size.y, cells };
+            cache.windFxField = field;
+            return cells.size ? field : null;
+        };
+
+        const stopMapWindFx = (clear = true) => {
+            mapWindFxActive = false;
+            if (mapWindFxRaf) {
+                cancelAnimationFrame(mapWindFxRaf);
+                mapWindFxRaf = null;
+            }
+            if (mapWindFxCanvas) mapWindFxCanvas.classList.remove("active");
+            if (mapWindySignature) mapWindySignature.classList.remove("active");
+            if (clear) clearMapWindFxCanvas();
+        };
+
+        const tickMapWindFx = (nowMs) => {
+            if (!mapWindFxActive || !mapInstance || !pageMap || !pageMap.classList.contains("active")) {
+                mapWindFxRaf = null;
+                return;
+            }
+            if (mapOverlayKey !== "wind") {
+                stopMapWindFx();
+                return;
+            }
+            const dims = ensureMapWindFxCanvas();
+            if (!dims || !mapWindFxCtx || !mapWindFxCanvas) {
+                mapWindFxRaf = null;
+                return;
+            }
+            const cache = mapOverlayCache.wind;
+            if (!cache || !Array.isArray(cache.timestamps) || !cache.timestamps.length) {
+                stopMapWindFx();
+                return;
+            }
+            const field = buildMapWindFxField(cache, mapOverlayIndex);
+            if (!field || !field.cells.size) {
+                mapWindFxRaf = requestAnimationFrame(tickMapWindFx);
+                return;
+            }
+            const dt = clamp(((nowMs || 0) - (mapWindFxLastMs || (nowMs || 0))) / 1000, 0.008, 0.05);
+            mapWindFxLastMs = nowMs || 0;
+            const ctx = mapWindFxCtx;
+            const dpr = Number(mapWindFxCanvas.dataset.dpr || 1) || 1;
+            const width = dims.width;
+            const height = dims.height;
+
+            ctx.save();
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.globalCompositeOperation = "source-over";
+            ctx.fillStyle = "rgba(6, 15, 28, 0.1)";
+            ctx.fillRect(0, 0, mapWindFxCanvas.width, mapWindFxCanvas.height);
+            ctx.restore();
+
+            ctx.save();
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            const speedScale = 7 + mapInstance.getZoom() * 0.65;
+            for (let i = 0; i < mapWindFxParticles.length; i += 1) {
+                const p = mapWindFxParticles[i];
+                if (!p) continue;
+                p.age += dt;
+                if (p.age > p.maxAge) {
+                    mapWindFxParticles[i] = spawnMapWindFxParticle(width, height);
+                    continue;
+                }
+                const vec = sampleMapWindFxVector(field, p.x, p.y);
+                if (!vec) {
+                    mapWindFxParticles[i] = spawnMapWindFxParticle(width, height);
+                    continue;
+                }
+                const x1 = p.x;
+                const y1 = p.y;
+                const x2 = x1 + (vec.u * speedScale * dt);
+                const y2 = y1 - (vec.v * speedScale * dt);
+                if (x2 < -8 || x2 > width + 8 || y2 < -8 || y2 > height + 8) {
+                    mapWindFxParticles[i] = spawnMapWindFxParticle(width, height);
+                    continue;
+                }
+                p.x = x2;
+                p.y = y2;
+                const speed = Number.isFinite(vec.speed) ? vec.speed : 0;
+                const alpha = clamp(0.16 + speed * 0.055, 0.18, 0.74);
+                const hue = clamp(208 - speed * 5.2, 176, 208);
+                ctx.strokeStyle = `hsla(${hue}, 90%, 82%, ${alpha})`;
+                ctx.lineWidth = clamp(0.6 + speed * 0.09, 0.6, 1.55);
+                ctx.beginPath();
+                ctx.moveTo(x1, y1);
+                ctx.lineTo(x2, y2);
+                ctx.stroke();
+            }
+            ctx.restore();
+            mapWindFxRaf = requestAnimationFrame(tickMapWindFx);
+        };
+
+        const startMapWindFx = (cache, timeIndex) => {
+            if (!mapInstance || !cache || !Array.isArray(cache.points) || !cache.points.length) {
+                stopMapWindFx();
+                return;
+            }
+            const dims = ensureMapWindFxCanvas();
+            if (!dims || !mapWindFxCtx) return;
+            const field = buildMapWindFxField(cache, timeIndex);
+            if (!field || !field.cells.size) {
+                stopMapWindFx();
+                return;
+            }
+            const isCoarse = !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
+            const targetCount = isCoarse ? 90 : 180;
+            if (!Array.isArray(mapWindFxParticles) || mapWindFxParticles.length !== targetCount) {
+                mapWindFxParticles = Array.from({ length: targetCount }, () => spawnMapWindFxParticle(dims.width, dims.height));
+            }
+            mapWindFxActive = true;
+            mapWindFxLastMs = (typeof performance !== "undefined" && typeof performance.now === "function") ? performance.now() : Date.now();
+            if (mapWindFxCanvas) mapWindFxCanvas.classList.add("active");
+            if (mapWindySignature) mapWindySignature.classList.add("active");
+            if (!mapWindFxRaf) mapWindFxRaf = requestAnimationFrame(tickMapWindFx);
+        };
+
         const renderOverlayCanvas = (cache, config, timeIndex) => {
             if (!mapInstance || !cache || !config) return null;
             const size = mapInstance.getSize();
@@ -8555,6 +8830,8 @@
                 mapOverlayLayer.addTo(mapInstance);
             }
             setMapMeta(config, cache.timestamps[mapOverlayIndex]);
+            if (mapOverlayKey === "wind" && config === MAP_OVERLAYS.wind) startMapWindFx(cache, mapOverlayIndex);
+            else stopMapWindFx();
             return true;
         };
 
@@ -8611,6 +8888,7 @@
         const updateMapOverlay = async (opts = {}) => {
             if (!mapInstance) return;
             if (!pageMap || !pageMap.classList.contains("active")) {
+                stopMapWindFx();
                 if (mapOverlayPrefetchTimer) {
                     clearTimeout(mapOverlayPrefetchTimer);
                     mapOverlayPrefetchTimer = null;
@@ -8629,6 +8907,7 @@
             const viewBbox = clampBbox(viewBboxRaw, limits);
             const viewBboxLimited = limitOverlayViewBboxForConfig(viewBbox, config, limits);
             if (!bboxIntersects(viewBboxRaw, limits)) {
+                stopMapWindFx();
                 if (mapOverlayPrefetchTimer) {
                     clearTimeout(mapOverlayPrefetchTimer);
                     mapOverlayPrefetchTimer = null;
@@ -8681,6 +8960,7 @@
                     if (reqId !== mapOverlayRequestId) return;
                     const built = buildOverlayCache(fetched.data, fetched.fetchBounds, config);
                     if (!built || !built.points.length || !built.timestamps.length) {
+                        stopMapWindFx();
                         stopMapPlay();
                         mapOverlayLegendMeta = "";
                         mapOverlayTimestamps = [];
@@ -8706,6 +8986,7 @@
                 } catch (err) {
                     if (reqId !== mapOverlayRequestId) return;
                     if (isAbortError(err)) return;
+                    stopMapWindFx();
                     stopMapPlay();
                     if (mapOverlayLayer) {
                         mapInstance.removeLayer(mapOverlayLayer);
@@ -8725,6 +9006,7 @@
             if (!layerCache) return;
             mapOverlayTimestamps = layerCache.timestamps || [];
             if (!mapOverlayTimestamps.length) {
+                stopMapWindFx();
                 stopMapPlay();
                 syncMapTimeUi();
                 return;
@@ -8792,6 +9074,8 @@
             });
             primaryBaseLayer.addTo(mapInstance);
             markerInstance = L.marker([lat, lon]).addTo(mapInstance);
+            mapInstance.on("movestart", () => stopMapWindFx());
+            mapInstance.on("zoomstart", () => stopMapWindFx());
             mapInstance.on("moveend", () => scheduleMapOverlayUpdate(150, { keepIndex: true }));
             mapInstance.on("zoomend", () => scheduleMapOverlayUpdate(110, { keepIndex: true }));
             setMapLegend(MAP_OVERLAYS[mapOverlayKey] || MAP_OVERLAYS.wind);
@@ -8821,6 +9105,7 @@
                     mapOverlayKey = key;
                     mapOverlayLegendMeta = "";
                     mapLayerButtons.forEach((b) => b.classList.toggle("active", b === btn));
+                    if (key !== "wind") stopMapWindFx();
                     stopMapPlay();
                     setMapLegend(MAP_OVERLAYS[mapOverlayKey], "");
                     scheduleMapOverlayUpdate(0, { keepIndex: false });
