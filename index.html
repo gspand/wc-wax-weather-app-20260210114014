@@ -2889,6 +2889,7 @@
                 resource: "nwp-v1-1h-2500m",
                 params: ["u10m", "v10m"],
                 preferTimeseriesSample: false,
+                smoothGradient: true,
                 unit: "km/h",
                 min: 0,
                 max: 60,
@@ -2928,6 +2929,7 @@
                 resource: "nwp-v1-1h-2500m",
                 params: ["rr_acc"],
                 preferTimeseriesSample: false,
+                smoothGradient: true,
                 unit: "mm",
                 min: 0,
                 max: 10,
@@ -2955,6 +2957,7 @@
                 params: ["tcc"],
                 paramCandidates: [["tcc"]],
                 preferTimeseriesSample: false,
+                smoothGradient: true,
                 unit: "%",
                 min: 0,
                 max: 100,
@@ -2985,6 +2988,7 @@
                 resource: "nowcast-v1-15min-1km",
                 params: ["rr"],
                 preferTimeseriesSample: false,
+                smoothGradient: true,
                 unit: "mm",
                 min: 0,
                 max: 5,
@@ -7846,15 +7850,15 @@
         const fetchOverlayDataWithFallback = async (config, viewBbox, limits, signal = null) => {
             const timeoutMs = Number.isFinite(config.fetchTimeoutMs) ? config.fetchTimeoutMs : FETCH_TIMEOUT_MS;
             const zoom = mapInstance ? mapInstance.getZoom() : 8;
-            const wideViewMode = zoom <= 8;
+            const wideViewMode = false;
             const basePad = Number.isFinite(config.padRatio) ? config.padRatio : 0.2;
             const zoomFactor = zoom >= 11 ? 0.78 : (zoom >= 9 ? 0.88 : 1);
             const effectivePad = Math.max(0.08, Math.min(0.3, basePad * zoomFactor));
             const fetchSpanFactor = zoom >= 11 ? 1.16 : (zoom >= 9 ? 1.04 : (zoom >= 8 ? 0.84 : 0.7));
             const fetchMaxSpanLatBase = Number.isFinite(config.fetchMaxSpanLat) ? config.fetchMaxSpanLat : config.maxSpanLat;
             const fetchMaxSpanLonBase = Number.isFinite(config.fetchMaxSpanLon) ? config.fetchMaxSpanLon : config.maxSpanLon;
-            const fetchMaxSpanLat = wideViewMode ? null : (Number.isFinite(fetchMaxSpanLatBase) ? fetchMaxSpanLatBase * fetchSpanFactor : null);
-            const fetchMaxSpanLon = wideViewMode ? null : (Number.isFinite(fetchMaxSpanLonBase) ? fetchMaxSpanLonBase * fetchSpanFactor : null);
+            const fetchMaxSpanLat = null;
+            const fetchMaxSpanLon = null;
             const primaryBounds = limitBboxSpan(
                 expandBbox(viewBbox, effectivePad, limits),
                 fetchMaxSpanLat,
@@ -7880,7 +7884,7 @@
             const maxAttempts = Number.isFinite(config.maxAttempts) ? Math.max(1, Math.round(config.maxAttempts)) : 2;
             let lastErr = null;
             let attempts = 0;
-            const preferSample = config.preferTimeseriesSample !== false || wideViewMode;
+            const preferSample = false;
 
             for (const bounds of boundCandidates) {
                 for (const paramSet of paramSets) {
@@ -8078,6 +8082,22 @@
                 );
             }
 
+            if (config.smoothGradient) {
+                const blurPx = Math.max(0.6, Math.min(2.8, ((cellW + cellH) * 0.14 * renderScale)));
+                if (blurPx > 0.55) {
+                    const smoothCanvas = document.createElement("canvas");
+                    smoothCanvas.width = canvas.width;
+                    smoothCanvas.height = canvas.height;
+                    const smoothCtx = smoothCanvas.getContext("2d");
+                    if (smoothCtx) {
+                        smoothCtx.filter = `blur(${blurPx}px)`;
+                        smoothCtx.drawImage(canvas, 0, 0);
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        ctx.drawImage(smoothCanvas, 0, 0);
+                    }
+                }
+            }
+
             if (typeof config.vector === "function") {
                 const arrowTarget = Math.max(450, Math.round(targetPoints * 0.08));
                 const arrowStride = Math.max(stride, Math.ceil(cache.points.length / arrowTarget));
@@ -8151,12 +8171,7 @@
         );
 
         const limitOverlayViewBboxForConfig = (viewBbox, config, limits) => {
-            const zoom = mapInstance ? mapInstance.getZoom() : 8;
-            if (zoom <= 8) return clampBbox(viewBbox, limits);
-            const spanFactor = overlaySpanFactorForZoom(zoom);
-            const viewMaxSpanLat = Number.isFinite(config.maxSpanLat) ? config.maxSpanLat * spanFactor : null;
-            const viewMaxSpanLon = Number.isFinite(config.maxSpanLon) ? config.maxSpanLon * spanFactor : null;
-            return limitBboxSpan(viewBbox, viewMaxSpanLat, viewMaxSpanLon, limits);
+            return clampBbox(viewBbox, limits);
         };
 
         const prefetchOtherMapOverlays = async (viewBboxRaw, activeKey) => {
@@ -8244,11 +8259,9 @@
             }
             const previousTs = mapOverlayTimestamps[mapOverlayIndex] || null;
             const cached = mapOverlayCache[mapOverlayKey];
-            const zoomNow = mapInstance ? mapInstance.getZoom() : 8;
-            const detailViewMode = zoomNow > 8;
             const isFresh = cached && (Date.now() - cached.fetchedAt) < (config.ttlMs || 10 * 60 * 1000);
             const cachedCoarseForDetail = !!(
-                detailViewMode && cached && (
+                cached && (
                     cached.wideViewMode === true ||
                     (Number.isFinite(cached.latStep) && cached.latStep > 0.05) ||
                     (Number.isFinite(cached.lonStep) && cached.lonStep > 0.08)
