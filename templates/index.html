@@ -1,0 +1,140 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page page-home">
+  <section class="hero-card">
+    <div>
+      <p class="eyebrow">Tour</p>
+      <h1>{{ tour.name }}</h1>
+      <p class="subtitle">Start {{ tour.start_date }} · {{ summary.stage_count }} Etappen</p>
+    </div>
+    <div class="hero-metrics">
+      <div class="metric-card">
+        <span class="metric-value">{{ summary.total_distance }}</span>
+        <span class="metric-label">km</span>
+      </div>
+      <div class="metric-card">
+        <span class="metric-value">{{ summary.total_elevation }}</span>
+        <span class="metric-label">hm</span>
+      </div>
+      <div class="metric-card">
+        <span class="metric-value">{{ summary.stage_count }}</span>
+        <span class="metric-label">Etappen</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2>Gesamtübersicht über alle Tage</h2>
+    <p class="subtitle">Kartenquelle: {{ tile_layer.provider }}</p>
+    <p class="subtitle" id="map-status">{{ tile_layer.status }}</p>
+    <div class="track-card" id="tour-map"></div>
+  </section>
+
+  <section class="section">
+    <h2>Etappen</h2>
+    <div class="stages-grid">
+      {% for stage in stages %}
+      <a class="stage-card" href="{{ url_for('stage_detail', stage_id=stage.id) }}">
+        <div class="stage-title">
+          <span class="stage-color" style="background: {{ stage.color }}"></span>
+          <div>
+            <strong>{{ stage.title }}</strong>
+            <span>{{ stage.date }}</span>
+          </div>
+        </div>
+        <div class="stage-values">
+          <span>{{ stage.distance }} km</span>
+          <span>{{ stage.elevation_gain }} hm</span>
+          <span>{{ (stage.moving_time//3600) }}h {{ ((stage.moving_time%3600)//60) }}m</span>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+  </section>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script>
+  const tileConfig = {{ tile_layer|tojson }};
+  const statusEl = document.getElementById('map-status');
+
+  function setStatus(text) {
+    if (statusEl) {
+      statusEl.textContent = text;
+    }
+  }
+
+  async function addBaseLayer(map) {
+    if (tileConfig.mode === 'google-client') {
+      try {
+        const sessionResponse = await fetch(`https://tile.googleapis.com/v1/createSession?key=${encodeURIComponent(tileConfig.google_api_key)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            mapType: 'terrain',
+            language: tileConfig.map_language,
+            region: tileConfig.map_region,
+            scale: 'scaleFactor1x',
+            highDpi: false
+          })
+        });
+
+        if (!sessionResponse.ok) {
+          const body = await sessionResponse.text();
+          throw new Error(`createSession ${sessionResponse.status} ${body.slice(0, 120)}`);
+        }
+
+        const sessionData = await sessionResponse.json();
+        if (!sessionData.session) {
+          throw new Error('Keine Session von Google erhalten');
+        }
+
+        const url = `https://tile.googleapis.com/v1/2dtiles/{z}/{x}/{y}?session=${sessionData.session}&key=${encodeURIComponent(tileConfig.google_api_key)}`;
+        L.tileLayer(url, {
+          maxZoom: tileConfig.google_max_zoom || 20,
+          attribution: '&copy; Google'
+        }).addTo(map);
+        setStatus('Google Terrain aktiv');
+        return;
+      } catch (err) {
+        setStatus(`Google Terrain nicht aktiv: ${err.message}`);
+      }
+    }
+
+    L.tileLayer(tileConfig.url, {
+      maxZoom: tileConfig.max_zoom,
+      attribution: tileConfig.attribution
+    }).addTo(map);
+  }
+
+  const map = L.map('tour-map', { scrollWheelZoom: false }).setView([46.6, 11.8], 7);
+  addBaseLayer(map);
+
+  const geojson = {{ all_tracks_geojson | safe }};
+  const layer = L.geoJSON(geojson, {
+    style: function(feature) {
+      return {
+        color: feature.properties.color || '#1e88e5',
+        weight: 4,
+        opacity: 0.95
+      };
+    },
+    onEachFeature: function(feature, layer) {
+      const stageId = feature.properties.stage_id;
+      const title = feature.properties.title || 'Etappe';
+      const date = feature.properties.date || '';
+      layer.bindPopup(`<strong>${title}</strong><br>${date}`);
+      layer.on('click', function() {
+        if (stageId) {
+          window.location.href = `/stage/${stageId}`;
+        }
+      });
+    }
+  }).addTo(map);
+
+  if (layer.getLayers().length > 0) {
+    map.fitBounds(layer.getBounds(), { padding: [18, 18] });
+  }
+</script>
+{% endblock %}

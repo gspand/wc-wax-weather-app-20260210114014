@@ -1,0 +1,254 @@
+Du arbeitest in diesem GitHub-Repository an einem ersten Prototypen für eine Bikepacking-Tagebuch-App.
+
+Diese Anleitung ist so formuliert, dass sie auch auf dem Handy direkt verständlich ist. Du brauchst keinen Desktop, sondern kannst den nächsten Schritt aus den Anweisungen ableiten.
+
+Ziel:
+- Erzeuge aus dem vorhandenen Notebook-Code eine saubere Web-App.
+- Sie muss lokal laufen, mobil nutzbar sein und wie eine kleine Reise-App aussehen.
+- Vermeide Google-Colab-spezifischen Code.
+- Speichere Zugangsdaten nicht im Code.
+
+Wichtig:
+- Arbeite in kleinen, klaren Schritten.
+- Zuerst Struktur und Datenmodell definieren.
+- Dann Basis-UI bauen.
+- Danach Garmin-Import, Trackanzeige, Tagebuch und Bilder anhängen.
+
+Hauptfunktionen der App:
+1. Startseite
+- Reiseübersicht mit Titel, Startdatum, Gesamtdistanz, Höhenmetern, Fahrzeit, Etappenanzahl und Belastung.
+- Große Karte mit allen Etappen.
+- Jede Tagesetappe in einer eigenen Farbe.
+
+2. Etappenübersicht
+- Liste aller Tage in Reihenfolge.
+- Datum, Aktivitätsname, Distanz, Höhenmeter, Fahrzeit.
+- Durchschnittliche Herzfrequenz, Belastungsscore.
+- Farben passend zur Karte.
+
+3. Einzelne Tagesansicht
+- Klick auf eine Etappe öffnet Details.
+- Karte nur für diese Etappe.
+- Distanz, Höhenmeter, Fahrzeit und Gesamtzeit.
+- Durchschnitts- und Maximal-Herzfrequenz.
+- Durchschnittsleistung und Normalized Power (falls vorhanden).
+- Belastungsscore, Start- und Zielort.
+- Raum für Tagebuchtext, mehrere Bilder und Bewertung.
+
+4. Tagebuch
+- Pro Etappe soll ein Text gespeichert werden.
+- Speicherung lokal in SQLite oder JSON.
+- Texte müssen nach Neustart erhalten bleiben.
+- Bearbeiten und speichern über die Weboberfläche.
+
+5. Bilder
+- Pro Etappe Bilder hochladen.
+- Lokal in einem Upload-Ordner speichern.
+- Jeder Etappe zuordnen.
+- Foto-Galerie in der Tagesansicht anzeigen.
+
+6. Garmin-Integration
+- Nutze vorhandenen Garmin-Code, wenn möglich.
+- Lade Garmin-Aktivitäten ab einem konfigurierbaren Startdatum.
+- Verwende nur Radsport-Aktivitäten.
+- Gruppiere Aktivitäten nach Kalendertag zu Etappen.
+- Ergänze beim Import neue Aktivitäten, ohne Duplikate anzulegen.
+- Speichere Garmin-Passwörter nicht im Code.
+- Verwende Umgebungsvariablen oder ein Loginformular.
+- Speichere Session/Token lokal und wiederverwendbar.
+- Unterstütze MFA, wenn möglich.
+- Erzwinge bei 429 oder Loginfehlern verständliche Fehlermeldungen.
+- Kein automatisches Schleifen-Login.
+
+7. GPS-Track
+- Zeige den vollständigen Track, nicht nur Start/Ziel.
+- Lade GPS-Daten pro Aktivität.
+- Wenn Garmin keine Punkte liefert, verwende FIT/GPX/TCX-Download.
+- Cache Trackdaten lokal.
+- Speichere die Route als GeoJSON, GPX oder interne Liste.
+- Jede Etappe auf Leaflet farbig darstellen.
+- Zoome die Karte automatisch auf alle Etappen.
+- Klick auf eine Route öffnet die dazugehörige Tagesansicht.
+
+8. Datenmodell
+Erstelle ein sauberes Datenmodell mit mindestens:
+Tour
+- id
+- name
+- start_date
+- description
+
+Stage
+- id
+- tour_id
+- garmin_activity_id
+- date
+- title
+- distance
+- elevation_gain
+- moving_time
+- elapsed_time
+- average_hr
+- max_hr
+- average_power
+- normalized_power
+- load_score
+- color
+- diary_text
+- rating
+
+Photo
+- id
+- stage_id
+- filename
+- caption
+
+TrackPoint / Trackdatei
+- stage_id
+- latitude
+- longitude
+- optional elevation
+- optional timestamp
+
+9. Projektstruktur
+Überführe den Notebook-Code in eine übersichtliche Struktur, z. B.:
+app.py
+config.py
+requirements.txt
+README.md
+
+bikepacking/
+  garmin_client.py
+  activity_import.py
+  track_loader.py
+  database.py
+  models.py
+  services.py
+
+templates/
+  base.html
+  index.html
+  stage.html
+  settings.html
+
+static/
+  css/app.css
+  js/map.js
+  uploads/
+
+data/
+  bikepacking.db
+  tracks/
+
+10. Benutzeroberfläche
+Gestalte das UI modern und ruhig:
+- mobile first
+- große Karte
+- klare Kennzahlen
+- viel Weißraum
+- konsistente Etappenfarben
+- keine technische Tabellenansicht als Startseite
+- lieber Apple-Journal/Polarsteps-Stil als Garmin Connect
+- responsive für Mobil und Desktop
+- dezenter Outdoor-Look
+
+11. Sicherheit
+- Keine Passwörter oder Tokens ins Git committen.
+- .env und Sessiondateien in .gitignore.
+- Beispielkonfiguration in .env.example.
+- Uploads prüfen und nur erlaubte Bildformate akzeptieren.
+- Keine Löschfunktionen für Garmin/Strava.
+- Ändere bestehende Garmin-Aktivitäten nicht im Quellcode.
+
+12. Entwicklungsziel
+Am Ende soll ein erstes nutzbares Prototyp laufen.
+Starterlauben:
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python app.py
+
+Unter Windows:
+.venv\Scripts\activate
+
+Danach soll die App erreichbar sein unter:
+http://127.0.0.1:5000
+
+13. Demo-Modus
+Wenn Garmin-Zugriff nicht möglich ist, bitte einen Demo-Modus einbauen:
+- Verwende Beispielaktivitäten oder lokal gespeicherte JSON-Daten.
+- So funktioniert die App auch ohne Garmin-Login.
+
+Hinweis für unterwegs:
+- Arbeite Schritt für Schritt.
+- Wenn du auf dem Handy bist, konzentriere dich auf Struktur, Basisseiten und lokale Daten.
+- Garmin-Import und Bilder kommen danach.
+- So kannst du das Projekt später leicht in ein eigenes Repo verschieben.
+
+12. Entwicklungsziel
+Am Ende soll bereits ein erster nutzbarer Prototyp laufen.
+
+Er soll nach Möglichkeit mit diesen Befehlen startbar sein:
+
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python app.py
+
+Unter Windows entsprechend mit:
+.venv\Scripts\activate
+
+Danach soll die Anwendung erreichbar sein unter:
+http://127.0.0.1:5000
+
+13. Demo-Modus
+Da Garmin-Login oder API-Zugriff fehlschlagen kann, bitte zusätzlich einen Demo-Modus einbauen:
+- vorhandene Beispielaktivitäten oder lokal gespeicherte JSON-Daten verwenden
+- die App muss auch ohne Garmin-Login vollständig sichtbar sein
+- mindestens vier Beispiel-Etappen darstellen
+- unterschiedliche Farben
+- Karte
+- Detailseiten
+- Tagebuch
+- Bilder-Platzhalter
+
+14. Dokumentation
+README.md soll enthalten:
+- Projektbeschreibung
+- Installation
+- Start
+- Garmin-Konfiguration
+- MFA-Hinweis
+- Demo-Modus
+- Projektstruktur
+- bekannte Einschränkungen
+- nächste sinnvolle Schritte
+
+15. Vorgehensweise
+Bitte nicht blind alles neu schreiben.
+
+Gehe schrittweise vor:
+1. bestehenden Code analysieren,
+2. funktionierende Teile sichern,
+3. Fehler und Colab-Abhängigkeiten entfernen,
+4. Projektstruktur erstellen,
+5. Datenmodell und lokale Speicherung umsetzen,
+6. Weboberfläche bauen,
+7. Kartenintegration hinzufügen,
+8. Garmin-Import einbauen,
+9. Demo-Modus ergänzen,
+10. Anwendung starten und Fehler beheben.
+
+Führe die Anwendung selbst aus, soweit die Entwicklungsumgebung das erlaubt.
+
+Behebe Importfehler, fehlende Abhängigkeiten, Syntaxfehler und Laufzeitfehler.
+
+Erstelle danach eine kurze Zusammenfassung:
+- was geändert wurde,
+- wie die App gestartet wird,
+- welche Funktionen bereits laufen,
+- welche Funktionen noch Platzhalter sind,
+- welche Dateien neu erstellt wurden.
+
+Wichtig:
+Der erste Prototyp soll tatsächlich laufen und bereits wie eine kleine Bikepacking-App wirken. Perfektion ist noch nicht notwendig, aber Startseite, Karte, Etappenliste und anklickbare Tagesansichten müssen funktionieren.
