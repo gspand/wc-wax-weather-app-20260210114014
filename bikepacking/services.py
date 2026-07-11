@@ -671,6 +671,13 @@ def import_from_garmin(tour_name="Garmin Bikepacking Tour"):
     conn = get_connection()
     cursor = conn.cursor()
 
+    # Demo-Etappen löschen bevor echte Daten importiert werden
+    cursor.execute(
+        "DELETE FROM stages WHERE tour_id = ? AND (garmin_activity_id IS NULL OR garmin_activity_id = '')",
+        (tour_id,),
+    )
+    conn.commit()
+
     for idx, day in enumerate(ordered_days):
         day_activities = grouped[day]
         points = []
@@ -860,6 +867,13 @@ def import_from_colab_json(payload):
 
     conn = get_connection()
     cursor = conn.cursor()
+
+    # Demo-Etappen löschen: alle Stages ohne Garmin-ID sind Demo-Daten
+    cursor.execute(
+        "DELETE FROM stages WHERE tour_id = ? AND (garmin_activity_id IS NULL OR garmin_activity_id = '')",
+        (tour_id,),
+    )
+    conn.commit()
 
     imported_count = 0
     for idx, stage in enumerate(sorted(stages, key=lambda x: str(x.get("date") or ""))):
