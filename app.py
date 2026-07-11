@@ -33,6 +33,26 @@ GARMIN_IMPORT_COOLDOWN_MINUTES = 45
 init_db()
 create_demo_data()
 
+# Alte grüne/schwach-sichtbare Farben durch kontrastreichere ersetzen
+def _migrate_colors():
+    replacements = {
+        "#43a047": "#ff6f00",  # Grün → Orange
+        "#8bc34a": "#ffd600",  # Hellgrün → Gelb
+        "#009688": "#0288d1",  # Teal → Blau
+        "#00acc1": "#e91e63",  # Cyan-Grün → Pink
+        "#1e88e5": "#1565c0",  # Hellblau → Dunkelblau
+        "#fb8c00": "#ff3d00",  # Hellorange → Tieforange
+    }
+    from bikepacking.database import get_connection
+    conn = get_connection()
+    cursor = conn.cursor()
+    for old, new in replacements.items():
+        cursor.execute("UPDATE stages SET color = ? WHERE color = ?", (new, old))
+    conn.commit()
+    conn.close()
+
+_migrate_colors()
+
 def allowed_file(filename):
     return (
         "." in filename
@@ -221,22 +241,26 @@ def upload_photo(stage_id):
         flash("Etappe nicht gefunden.", "error")
         return redirect(url_for("index"))
 
-    file = request.files.get("photo")
+    files = request.files.getlist("photo")
     caption = request.form.get("caption", "").strip()
-    if not file or file.filename == "":
+    files = [f for f in files if f and f.filename != ""]
+    if not files:
         flash("Kein Bild ausgewählt.", "error")
         return redirect(url_for("stage_detail", stage_id=stage_id))
 
-    if not allowed_file(file.filename):
-        flash("Nur Bilder im Format JPG, PNG oder WEBP sind erlaubt.", "error")
-        return redirect(url_for("stage_detail", stage_id=stage_id))
+    saved_count = 0
+    for file in files:
+        if not allowed_file(file.filename):
+            flash(f"{file.filename}: Nur JPG, PNG oder WEBP erlaubt.", "error")
+            continue
+        filename = secure_filename(file.filename)
+        if save_stage_photo(stage_id, file, filename, caption):
+            saved_count += 1
 
-    filename = secure_filename(file.filename)
-    saved = save_stage_photo(stage_id, file, filename, caption)
-    if saved:
-        flash("Bild gespeichert.", "success")
+    if saved_count:
+        flash(f"{saved_count} Bild(er) gespeichert.", "success")
     else:
-        flash("Bild konnte nicht gespeichert werden.", "error")
+        flash("Kein Bild konnte gespeichert werden.", "error")
     return redirect(url_for("stage_detail", stage_id=stage_id))
 
 @app.route("/settings", methods=["GET"])

@@ -48,9 +48,9 @@
         {% endfor %}
       </div>
       <form action="{{ url_for('upload_photo', stage_id=stage.id) }}" method="post" enctype="multipart/form-data">
-        <input type="file" name="photo" accept="image/png,image/jpeg,image/webp" />
-        <input type="text" name="caption" placeholder="Bildbeschreibung" />
-        <button class="button button-secondary">Upload</button>
+        <input type="file" name="photo" accept="image/png,image/jpeg,image/webp" multiple />
+        <input type="text" name="caption" placeholder="Bildbeschreibung (für alle Bilder)" />
+        <button class="button button-secondary">Hochladen</button>
       </form>
     </div>
   </section>
