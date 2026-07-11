@@ -109,7 +109,12 @@
   const geojson = {{ track_geojson | safe }};
   const layer = L.geoJSON(geojson, {
     style: function() {
-      return { color: '{{ stage.color or "#1e88e5" }}', weight: 5 };
+      return { color: 'white', weight: 9, opacity: 0.6 };
+    }
+  }).addTo(map);
+  L.geoJSON(geojson, {
+    style: function() {
+      return { color: '{{ stage.color or "#e53935" }}', weight: 6, opacity: 1 };
     }
   }).addTo(map);
   if (layer.getLayers().length > 0) {

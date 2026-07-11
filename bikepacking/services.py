@@ -8,18 +8,18 @@ from bikepacking.garmin_client import GarminClient
 
 
 COLORS = [
-    "#e53935",
-    "#1e88e5",
-    "#43a047",
-    "#8e44ad",
-    "#fb8c00",
-    "#00acc1",
-    "#f44336",
-    "#3f51b5",
-    "#8bc34a",
-    "#009688",
-    "#ff5722",
-    "#673ab7",
+    "#e53935",  # Rot
+    "#ff6f00",  # Orange
+    "#ffd600",  # Gelb
+    "#e91e63",  # Pink
+    "#1565c0",  # Dunkelblau
+    "#00bcd4",  # Cyan
+    "#6a1b9a",  # Lila
+    "#f50057",  # Magenta
+    "#0288d1",  # Hellblau
+    "#ff3d00",  # Tieforange
+    "#aa00ff",  # Violett
+    "#00838f",  # Dunkeltürkis
 ]
 
 

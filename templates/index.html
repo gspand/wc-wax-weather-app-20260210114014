@@ -116,9 +116,19 @@
   const layer = L.geoJSON(geojson, {
     style: function(feature) {
       return {
-        color: feature.properties.color || '#1e88e5',
-        weight: 4,
-        opacity: 0.95
+        color: 'white',
+        weight: 8,
+        opacity: 0.6
+      };
+    }
+  }).addTo(map);
+
+  L.geoJSON(geojson, {
+    style: function(feature) {
+      return {
+        color: feature.properties.color || '#e53935',
+        weight: 5,
+        opacity: 1
       };
     },
     onEachFeature: function(feature, layer) {
