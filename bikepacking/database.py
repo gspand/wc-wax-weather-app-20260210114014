@@ -52,6 +52,8 @@ def init_db():
             rating TEXT,
             is_rest_day INTEGER DEFAULT 0,
             location TEXT,
+            passes TEXT,
+            countries TEXT,
             track_geojson TEXT,
             FOREIGN KEY(tour_id) REFERENCES tours(id)
         );
@@ -97,6 +99,8 @@ def _migrate_schema(conn):
     _add_column_if_missing(cursor, "stages", "temperature", "REAL")
     _add_column_if_missing(cursor, "stages", "is_rest_day", "INTEGER DEFAULT 0")
     _add_column_if_missing(cursor, "stages", "location", "TEXT")
+    _add_column_if_missing(cursor, "stages", "passes", "TEXT")
+    _add_column_if_missing(cursor, "stages", "countries", "TEXT")
 
     # Unique index for idempotent Strava imports
     # Covers rows where source is a non-manual, non-empty value with an external ID

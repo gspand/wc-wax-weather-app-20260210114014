@@ -19,6 +19,35 @@
     <div class="track-card" id="map"></div>
   </section>
 
+  {# Pass- und Ländererkennung #}
+  <section class="section">
+    <div class="card geocoding-card">
+      <h2>🗺 Pässe &amp; Länder</h2>
+      {% if geocoding.passes or geocoding.countries %}
+        {% if geocoding.countries %}
+        <p><strong>Länder:</strong>
+          {% for c in geocoding.countries %}
+            <span class="badge badge-country">{{ c }}</span>
+          {% endfor %}
+        </p>
+        {% endif %}
+        {% if geocoding.passes %}
+        <p><strong>Pässe:</strong>
+          {% for p in geocoding.passes %}
+            <span class="badge badge-pass">{{ p }}</span>
+          {% endfor %}
+        </p>
+        {% endif %}
+      {% else %}
+        <p class="muted">Noch keine Pässe oder Länder erkannt.</p>
+      {% endif %}
+      <form action="{{ url_for('geocode_stage', stage_id=stage.id) }}" method="post" style="margin-top:0.75rem">
+        <button class="button button-secondary" type="submit">🔍 Pässe &amp; Länder automatisch erkennen</button>
+      </form>
+      <p class="hint">Die Erkennung läuft im Hintergrund (~20–60 Sek.). Danach Seite neu laden.</p>
+    </div>
+  </section>
+
   <section class="section split-columns">
     <div class="card">
       <h2>Tagebuch</h2>

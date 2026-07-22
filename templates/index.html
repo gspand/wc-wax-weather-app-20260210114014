@@ -47,6 +47,12 @@
           <span>{{ stage.elevation_gain }} hm</span>
           <span>{{ (stage.moving_time//3600) }}h {{ ((stage.moving_time%3600)//60) }}m</span>
         </div>
+        {% if stage.countries or stage.passes %}
+        <div class="stage-geo">
+          {% for c in stage.countries %}<span class="badge badge-country">{{ c }}</span>{% endfor %}
+          {% for p in stage.passes %}<span class="badge badge-pass">{{ p }}</span>{% endfor %}
+        </div>
+        {% endif %}
       </a>
       {% endfor %}
     </div>

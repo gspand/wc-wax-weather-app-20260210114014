@@ -28,6 +28,16 @@
     </form>
 
     {# ------------------------------------------------------------------ #}
+    {# Garmin / Colab JSON Import                                           #}
+    {# ------------------------------------------------------------------ #}
+    <h2>Garmin / Colab JSON importieren</h2>
+    <p>Lade deine exportierte <code>bikepacking_colab_export.json</code> hoch, um deine echten Etappendaten zu importieren.</p>
+    <form action="{{ url_for('import_json') }}" method="post" enctype="multipart/form-data">
+      <input type="file" name="json_file" accept=".json" required />
+      <button class="button" type="submit">JSON importieren</button>
+    </form>
+
+    {# ------------------------------------------------------------------ #}
     {# Strava Integration                                                   #}
     {# ------------------------------------------------------------------ #}
     <h2>Strava-Integration</h2>

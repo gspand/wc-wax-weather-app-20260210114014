@@ -19,10 +19,14 @@ from bikepacking.services import (
     save_stage_photo,
     get_stage_geojson,
     get_all_stages_geojson,
+    import_from_json,
+    save_stage_geocoding,
+    get_stage_geocoding,
 )
 from bikepacking.runtime_settings import load_runtime_settings, save_runtime_settings
 import bikepacking.strava_client as strava_client
 import bikepacking.strava_import as strava_import
+from bikepacking.geocoding import enrich_stage_geocoding
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -126,12 +130,14 @@ def stage_detail(stage_id):
     photos = get_stage_photos(stage_id)
     track_geojson = get_stage_geojson(stage)
     tile_layer = get_tile_layer_config()
+    geocoding = get_stage_geocoding(stage)
     return render_template(
         "stage.html",
         stage=stage,
         photos=photos,
         track_geojson=json.dumps(track_geojson),
         tile_layer=tile_layer,
+        geocoding=geocoding,
     )
 
 @app.route("/stage/<int:stage_id>/photo", methods=["POST"])
@@ -218,6 +224,60 @@ def import_demo():
     create_demo_data(force=True)
     flash("Demo-Daten wurden aktualisiert.", "success")
     return redirect(url_for("index"))
+
+
+@app.route("/import/json", methods=["POST"])
+def import_json():
+    """Import tour + stages from an uploaded Colab/Garmin JSON export file."""
+    file = request.files.get("json_file")
+    if not file or file.filename == "":
+        flash("Keine Datei ausgewählt.", "error")
+        return redirect(url_for("settings"))
+    if not file.filename.lower().endswith(".json"):
+        flash("Nur JSON-Dateien werden akzeptiert.", "error")
+        return redirect(url_for("settings"))
+
+    try:
+        raw = file.read().decode("utf-8")
+        data = json.loads(raw)
+    except Exception as exc:
+        flash(f"Fehler beim Lesen der JSON-Datei: {exc}", "error")
+        return redirect(url_for("settings"))
+
+    counts = import_from_json(data)
+    flash(
+        f"Import abgeschlossen: {counts['inserted']} neue Etappen"
+        + (f", {counts['skipped']} übersprungen" if counts["skipped"] else "")
+        + (f", {counts['errors']} Fehler" if counts["errors"] else "")
+        + ".",
+        "success",
+    )
+    return redirect(url_for("index"))
+
+
+@app.route("/stage/<int:stage_id>/geocode", methods=["POST"])
+def geocode_stage(stage_id):
+    """Trigger pass + country detection for a single stage (runs in background)."""
+    stage = get_stage(stage_id)
+    if not stage:
+        flash("Etappe nicht gefunden.", "error")
+        return redirect(url_for("index"))
+
+    def _run():
+        try:
+            result = enrich_stage_geocoding(stage)
+            save_stage_geocoding(stage_id, result["passes"], result["countries"])
+            logger.info(
+                "Geocoding done for stage %s: passes=%s countries=%s",
+                stage_id, result["passes"], result["countries"],
+            )
+        except Exception as exc:
+            logger.error("Geocoding error for stage %s: %s", stage_id, exc)
+
+    threading.Thread(target=_run, daemon=True).start()
+    flash("Pass- und Ländererkennung läuft im Hintergrund. Seite in ~30 Sekunden neu laden.", "success")
+    return redirect(url_for("stage_detail", stage_id=stage_id))
+
 
 
 # ---------------------------------------------------------------------------

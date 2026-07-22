@@ -1,8 +1,11 @@
 import json
+import logging
 from pathlib import Path
 
 from config import Config
 from bikepacking.database import get_connection, init_db
+
+logger = logging.getLogger(__name__)
 
 
 COLORS = [
@@ -424,6 +427,14 @@ def _dict_from_row(row):
             item["track_geojson"] = json.loads(item["track_geojson"])
         except Exception:
             item["track_geojson"] = None
+    for key in ("passes", "countries"):
+        if item.get(key):
+            try:
+                item[key] = json.loads(item[key])
+            except Exception:
+                item[key] = []
+        else:
+            item[key] = []
     return item
 
 
@@ -610,3 +621,199 @@ def get_all_stages_geojson(stages):
                 }
             )
     return {"type": "FeatureCollection", "features": features}
+
+
+# ---------------------------------------------------------------------------
+# Geocoding: save detected passes + countries for a stage
+# ---------------------------------------------------------------------------
+
+def save_stage_geocoding(stage_id: int, passes: list, countries: list):
+    """Persist detected passes and countries (as JSON strings) for a stage."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE stages SET passes = ?, countries = ? WHERE id = ?",
+        (json.dumps(passes, ensure_ascii=False), json.dumps(countries, ensure_ascii=False), stage_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_stage_geocoding(stage: dict) -> dict:
+    """Return {'passes': [...], 'countries': [...]} from a stage dict."""
+    # _dict_from_row already parses these as lists
+    passes = stage.get("passes") or []
+    countries = stage.get("countries") or []
+    if isinstance(passes, str):
+        try:
+            passes = json.loads(passes)
+        except Exception:
+            passes = []
+    if isinstance(countries, str):
+        try:
+            countries = json.loads(countries)
+        except Exception:
+            countries = []
+    return {"passes": passes, "countries": countries}
+
+
+# ---------------------------------------------------------------------------
+# Colab / Garmin JSON import
+# ---------------------------------------------------------------------------
+
+def _build_track_geojson_from_points(track_points):
+    """Convert [[lat, lon], ...] to a GeoJSON FeatureCollection."""
+    if not track_points:
+        return None
+    coords = [[lon, lat] for lat, lon in track_points]
+    return {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {},
+                "geometry": {"type": "LineString", "coordinates": coords},
+            }
+        ],
+    }
+
+
+def import_from_json(json_data: dict) -> dict:
+    """
+    Import tour + stages from a Colab/Garmin export JSON.
+
+    Accepted formats:
+      {"tour": {...}, "stages": [...]}
+      {"activities": [...]}  (with optional track_points per activity)
+
+    Returns {"inserted": int, "skipped": int, "errors": int}.
+    """
+    init_db()
+    counts = {"inserted": 0, "skipped": 0, "errors": 0}
+
+    activities = []
+    tour_meta = {}
+
+    if "stages" in json_data:
+        activities = json_data.get("stages", [])
+        tour_meta = json_data.get("tour", {})
+    elif "activities" in json_data:
+        activities = json_data.get("activities", [])
+    else:
+        logger.warning("import_from_json: no 'stages' or 'activities' key found")
+        return counts
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    # Upsert tour
+    cursor.execute("SELECT id FROM tours ORDER BY id LIMIT 1")
+    row = cursor.fetchone()
+    if row:
+        tour_id = row["id"]
+        if tour_meta.get("name"):
+            cursor.execute("UPDATE tours SET name=? WHERE id=?", (tour_meta["name"], tour_id))
+    else:
+        tour_name = tour_meta.get("name") or "Importierte Tour"
+        start_date = tour_meta.get("start_date") or (activities[0].get("date") or activities[0].get("startTimeLocal", "")[:10] if activities else "")
+        cursor.execute(
+            "INSERT INTO tours (name, start_date, description) VALUES (?, ?, ?)",
+            (tour_name, start_date, tour_meta.get("description", "")),
+        )
+        tour_id = cursor.lastrowid
+
+    conn.commit()
+
+    for activity in activities:
+        try:
+            # Normalize field names (Garmin export vs. Colab export may differ)
+            date = (
+                activity.get("date")
+                or activity.get("startTimeLocal", "")[:10]
+                or activity.get("start_date", "")[:10]
+            )
+            if not date:
+                counts["skipped"] += 1
+                continue
+
+            title = (
+                activity.get("title")
+                or activity.get("activityName")
+                or activity.get("name")
+                or f"Etappe {date}"
+            )
+            distance = float(activity.get("distance") or activity.get("distanceInMeters", 0) or 0)
+            if distance > 1000:  # Garmin stores in meters
+                distance = round(distance / 1000, 2)
+
+            elevation_gain = float(
+                activity.get("elevation_gain")
+                or activity.get("elevationGain")
+                or activity.get("totalElevationGain", 0)
+                or 0
+            )
+            moving_time = int(
+                activity.get("moving_time")
+                or activity.get("movingDuration")
+                or activity.get("duration", 0)
+                or 0
+            )
+            elapsed_time = int(
+                activity.get("elapsed_time")
+                or activity.get("duration")
+                or moving_time
+            )
+            avg_hr = activity.get("average_hr") or activity.get("averageHR")
+            max_hr = activity.get("max_hr") or activity.get("maxHR")
+            avg_power = activity.get("average_power") or activity.get("avgPower")
+            norm_power = activity.get("normalized_power")
+            load_score = activity.get("load_score") or activity.get("trainingLoad")
+            avg_speed = activity.get("average_speed") or activity.get("averageSpeed")
+            max_speed = activity.get("max_speed") or activity.get("maxSpeed")
+            location = activity.get("location") or activity.get("startingPoint")
+
+            # Track GeoJSON
+            track_geojson = activity.get("track_geojson")
+            if not track_geojson and activity.get("track_points"):
+                track_geojson = _build_track_geojson_from_points(activity["track_points"])
+
+            # Pick a color
+            cursor.execute("SELECT count(*) FROM stages WHERE tour_id=?", (tour_id,))
+            n = cursor.fetchone()[0]
+            color = COLORS[n % len(COLORS)]
+
+            garmin_id = str(activity.get("activityId") or activity.get("garmin_activity_id") or "")
+
+            # Check for duplicate
+            if garmin_id:
+                cursor.execute(
+                    "SELECT id FROM stages WHERE tour_id=? AND garmin_activity_id=?",
+                    (tour_id, garmin_id),
+                )
+                if cursor.fetchone():
+                    counts["skipped"] += 1
+                    continue
+
+            cursor.execute(
+                """INSERT INTO stages
+                   (tour_id, date, title, distance, elevation_gain, moving_time, elapsed_time,
+                    average_hr, max_hr, average_power, normalized_power, load_score,
+                    average_speed, max_speed, location, color, track_geojson, garmin_activity_id,
+                    source, diary_text, rating)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    tour_id, date, title, distance, elevation_gain, moving_time, elapsed_time,
+                    avg_hr, max_hr, avg_power, norm_power, load_score,
+                    avg_speed, max_speed, location, color,
+                    json.dumps(track_geojson) if track_geojson else None,
+                    garmin_id, "garmin", "", "",
+                ),
+            )
+            counts["inserted"] += 1
+        except Exception as exc:
+            logger.error("import_from_json: error on activity: %s", exc)
+            counts["errors"] += 1
+
+    conn.commit()
+    conn.close()
+    return counts

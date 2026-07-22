@@ -293,6 +293,54 @@ button {
   border-color: #fecaca;
 }
 
+.geocoding-card {
+  background: white;
+  border-radius: 16px;
+  padding: 20px 24px;
+  box-shadow: 0 4px 20px rgba(15, 23, 42, 0.06);
+}
+
+.geocoding-card p {
+  margin: 6px 0;
+}
+
+.geocoding-card .hint {
+  font-size: 0.82rem;
+  color: #6a7280;
+  margin-top: 8px;
+}
+
+.geocoding-card .muted {
+  color: #9ca3af;
+  font-style: italic;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  margin: 2px 3px;
+}
+
+.badge-country {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.badge-pass {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.stage-geo {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
 @media (max-width: 920px) {
   .hero-metrics,
   .stage-overview,
