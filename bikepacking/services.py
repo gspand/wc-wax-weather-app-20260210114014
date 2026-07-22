@@ -527,9 +527,24 @@ def get_tour_summary():
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT count(*) AS stage_count, sum(distance) AS total_distance, sum(elevation_gain) AS total_elevation, sum(moving_time) AS total_moving_time FROM stages"
+        "SELECT count(*) AS stage_count, sum(distance) AS total_distance, sum(elevation_gain) AS total_elevation, sum(moving_time) AS total_moving_time FROM stages WHERE is_rest_day = 0"
     )
     row = cursor.fetchone()
+
+    # Collect unique passes and countries across all stages
+    cursor.execute("SELECT passes, countries FROM stages WHERE is_rest_day = 0")
+    all_passes: set = set()
+    all_countries: set = set()
+    for r in cursor.fetchall():
+        for col, target in ((r["passes"], all_passes), (r["countries"], all_countries)):
+            if col:
+                try:
+                    items = json.loads(col)
+                    if isinstance(items, list):
+                        target.update(items)
+                except Exception:
+                    pass
+
     conn.close()
 
     if not row:
@@ -538,6 +553,8 @@ def get_tour_summary():
             "total_distance": 0,
             "total_elevation": 0,
             "total_moving_time": 0,
+            "total_passes": 0,
+            "total_countries": 0,
         }
 
     return {
@@ -545,6 +562,8 @@ def get_tour_summary():
         "total_distance": round(row["total_distance"] or 0, 1),
         "total_elevation": int(row["total_elevation"] or 0),
         "total_moving_time": int(row["total_moving_time"] or 0),
+        "total_passes": len(all_passes),
+        "total_countries": len(all_countries),
     }
 
 

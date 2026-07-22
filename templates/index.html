@@ -20,6 +20,18 @@
         <span class="metric-value">{{ summary.stage_count }}</span>
         <span class="metric-label">Etappen</span>
       </div>
+      {% if summary.total_passes > 0 %}
+      <div class="metric-card">
+        <span class="metric-value">{{ summary.total_passes }}</span>
+        <span class="metric-label">Pässe</span>
+      </div>
+      {% endif %}
+      {% if summary.total_countries > 0 %}
+      <div class="metric-card">
+        <span class="metric-value">{{ summary.total_countries }}</span>
+        <span class="metric-label">Länder</span>
+      </div>
+      {% endif %}
     </div>
   </section>
 

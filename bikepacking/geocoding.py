@@ -87,6 +87,7 @@ def detect_countries(track_points_latlon: list) -> List[str]:
 _PASS_NAME_KEYWORDS = (
     "sattel", "joch", "pass", "col ", "passo", "forcella", "colle",
     "monte", "portam", "scharte", "übergang",
+    "hochalpenstraße", "alpenstraße",
 )
 
 
@@ -124,14 +125,19 @@ def detect_passes(track_points_latlon: list) -> List[str]:
     buf = 0.010
     b = f"{min_lat - buf},{min_lon - buf},{max_lat + buf},{max_lon + buf}"
 
+    # Regex matches German/Italian/French pass-related name keywords
+    _KEYWORD_RE = "Sattel|Joch|[Pp]ass|Col |Passo|Forcella|Colle|Scharte|Übergang|[Hh]ochalpenstraße|[Aa]lpenstraße"
+
     query = f"""
-    [out:json][timeout:45];
+    [out:json][timeout:60];
     (
       node["natural"="saddle"]({b});
       node["mountain_pass"="yes"]({b});
       node["natural"="peak"]["mountain_pass"="yes"]({b});
+      node["name"~"{_KEYWORD_RE}",i]({b});
+      way["name"~"{_KEYWORD_RE}",i]({b});
     );
-    out body;
+    out center;
     """
 
     try:
@@ -167,7 +173,8 @@ def detect_passes(track_points_latlon: list) -> List[str]:
         )
         if not name:
             continue
-        el_lat, el_lon = el.get("lat", 0), el.get("lon", 0)
+        el_lat = el.get("lat") or (el.get("center") or {}).get("lat", 0)
+        el_lon = el.get("lon") or (el.get("center") or {}).get("lon", 0)
         near = any(
             abs(pt[0] - el_lat) < PROX and abs(pt[1] - el_lon) < PROX
             for pt in sample_pts
@@ -190,7 +197,8 @@ def detect_passes(track_points_latlon: list) -> List[str]:
             continue
         if not _name_suggests_pass(name):
             continue
-        el_lat, el_lon = el.get("lat", 0), el.get("lon", 0)
+        el_lat = el.get("lat") or (el.get("center") or {}).get("lat", 0)
+        el_lon = el.get("lon") or (el.get("center") or {}).get("lon", 0)
         # Use a wider radius for keyword-matched names
         near = any(
             abs(pt[0] - el_lat) < PROX * 2 and abs(pt[1] - el_lon) < PROX * 2
