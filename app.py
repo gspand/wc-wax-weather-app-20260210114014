@@ -281,18 +281,15 @@ def import_json():
         return redirect(url_for("settings"))
 
     counts = import_from_json(data)
-    flash(
+    msg = (
         f"Import abgeschlossen: {counts['inserted']} neue Etappen"
         + (f", {counts['skipped']} übersprungen" if counts["skipped"] else "")
         + (f", {counts['errors']} Fehler" if counts["errors"] else "")
-        + ". Pass- und Ländererkennung läuft im Hintergrund."
-        if counts["inserted"] else
-        f"Import abgeschlossen: {counts['inserted']} neue Etappen"
-        + (f", {counts['skipped']} übersprungen" if counts["skipped"] else "")
-        + (f", {counts['errors']} Fehler" if counts["errors"] else "")
-        + ".",
-        "success",
+        + ". Demo-Daten wurden entfernt."
     )
+    if counts["inserted"]:
+        msg += " Pass- und Ländererkennung läuft im Hintergrund."
+    flash(msg, "success")
     if counts["inserted"]:
         _start_auto_geocoding()
     return redirect(url_for("index"))
