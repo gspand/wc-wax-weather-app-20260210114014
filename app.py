@@ -23,6 +23,7 @@ from bikepacking.services import (
     save_stage_geocoding,
     get_stage_geocoding,
     get_stages_needing_geocoding,
+    save_stage_locations,
 )
 from bikepacking.runtime_settings import load_runtime_settings, save_runtime_settings
 import bikepacking.strava_client as strava_client
@@ -158,8 +159,11 @@ def stage_detail(stage_id):
     if request.method == "POST":
         diary_text = request.form.get("diary_text", "").strip()
         rating = request.form.get("rating")
+        start_location = request.form.get("start_location", "").strip()
+        end_location = request.form.get("end_location", "").strip()
         save_stage_diary(stage_id, diary_text)
         save_stage_rating(stage_id, rating)
+        save_stage_locations(stage_id, start_location, end_location)
         flash("Tagebuch gespeichert.", "success")
         return redirect(url_for("stage_detail", stage_id=stage_id))
 

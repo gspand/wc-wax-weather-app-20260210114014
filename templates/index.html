@@ -50,7 +50,7 @@
         <div class="stage-title">
           <span class="stage-color" style="background: {{ stage.color }}"></span>
           <div>
-            <strong>{{ stage.title }}</strong>
+            <strong>{% if stage.start_location and stage.end_location %}{{ stage.start_location }} – {{ stage.end_location }}{% elif stage.start_location %}{{ stage.start_location }}{% else %}{{ stage.title }}{% endif %}</strong>
             <span>{{ stage.date }}</span>
           </div>
         </div>

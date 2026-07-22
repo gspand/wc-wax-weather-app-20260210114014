@@ -627,7 +627,11 @@ def get_all_stages_geojson(stages):
             properties.update(
                 {
                     "stage_id": stage.get("id"),
-                    "title": stage.get("title"),
+                    "title": (
+                        f"{stage['start_location']} – {stage['end_location']}"
+                        if stage.get("start_location") and stage.get("end_location")
+                        else stage.get("start_location") or stage.get("title")
+                    ),
                     "date": stage.get("date"),
                     "color": stage.get("color"),
                 }
@@ -645,6 +649,18 @@ def get_all_stages_geojson(stages):
 # ---------------------------------------------------------------------------
 # Geocoding: save detected passes + countries for a stage
 # ---------------------------------------------------------------------------
+
+def save_stage_locations(stage_id: int, start_location: str, end_location: str):
+    """Persist start and end location for a stage."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE stages SET start_location = ?, end_location = ? WHERE id = ?",
+        (start_location or None, end_location or None, stage_id),
+    )
+    conn.commit()
+    conn.close()
+
 
 def save_stage_geocoding(stage_id: int, passes: list, countries: list):
     """Persist detected passes and countries (as JSON strings) for a stage."""

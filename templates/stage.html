@@ -4,7 +4,7 @@
   <section class="stage-header">
     <div>
       <p class="eyebrow">Etappe</p>
-      <h1>{{ stage.title }}</h1>
+      <h1>{% if stage.start_location and stage.end_location %}{{ stage.start_location }} – {{ stage.end_location }}{% elif stage.start_location %}{{ stage.start_location }}{% else %}{{ stage.title }}{% endif %}</h1>
       <p class="subtitle">{{ stage.date }} · {{ stage.distance }} km · {{ stage.elevation_gain }} hm</p>
     </div>
     <div class="stage-overview">
@@ -53,6 +53,11 @@
     <div class="card">
       <h2>Tagebuch</h2>
       <form method="post">
+        <label>Startort</label>
+        <input type="text" name="start_location" value="{{ stage.start_location or '' }}" placeholder="z.B. Innsbruck" />
+        <label>Endort</label>
+        <input type="text" name="end_location" value="{{ stage.end_location or '' }}" placeholder="z.B. Salzburg" />
+        <label>Tagebucheintrag</label>
         <textarea name="diary_text" rows="8">{{ stage.diary_text or '' }}</textarea>
         <label>Bewertung</label>
         <select name="rating">

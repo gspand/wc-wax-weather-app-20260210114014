@@ -101,6 +101,8 @@ def _migrate_schema(conn):
     _add_column_if_missing(cursor, "stages", "location", "TEXT")
     _add_column_if_missing(cursor, "stages", "passes", "TEXT")
     _add_column_if_missing(cursor, "stages", "countries", "TEXT")
+    _add_column_if_missing(cursor, "stages", "start_location", "TEXT")
+    _add_column_if_missing(cursor, "stages", "end_location", "TEXT")
 
     # Unique index for idempotent Strava imports
     # Covers rows where source is a non-manual, non-empty value with an external ID
