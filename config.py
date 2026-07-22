@@ -21,3 +21,8 @@ class Config:
     GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY", "")
     MAP_LANGUAGE = os.environ.get("MAP_LANGUAGE", "de-DE")
     MAP_REGION = os.environ.get("MAP_REGION", "AT")
+    # Strava OAuth – read exclusively from environment variables
+    STRAVA_CLIENT_ID = os.environ.get("STRAVA_CLIENT_ID", "")
+    STRAVA_CLIENT_SECRET = os.environ.get("STRAVA_CLIENT_SECRET", "")
+    STRAVA_CALLBACK_URL = os.environ.get("STRAVA_CALLBACK_URL", "")
+    STRAVA_WEBHOOK_VERIFY_TOKEN = os.environ.get("STRAVA_WEBHOOK_VERIFY_TOKEN", "")

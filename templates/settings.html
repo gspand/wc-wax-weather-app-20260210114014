@@ -67,6 +67,44 @@
         Nutze <code>track_points</code> als Liste in der Form <code>[[lat, lon], ...]</code>.
       </div>
     </div>
+
+    {# ------------------------------------------------------------------ #}
+    {# Strava Integration                                                   #}
+    {# ------------------------------------------------------------------ #}
+    <h2>Strava-Integration</h2>
+    {% if not strava_configured %}
+      <p>Strava ist nicht konfiguriert. Bitte folgende Umgebungsvariablen setzen:
+        <code>STRAVA_CLIENT_ID</code>, <code>STRAVA_CLIENT_SECRET</code>,
+        <code>STRAVA_CALLBACK_URL</code>, <code>STRAVA_WEBHOOK_VERIFY_TOKEN</code>.
+      </p>
+    {% elif strava_connected %}
+      <div class="settings-row">
+        <div><strong>Strava-Status</strong><br>✅ Verbunden (Athlet-ID: {{ strava_athlete_id or 'unbekannt' }})</div>
+      </div>
+      <form action="{{ url_for('strava_import_route') }}" method="post" style="margin-bottom:1rem">
+        <h3>Erstmaliger Import / Synchronisation</h3>
+        <p>Wähle den Zeitraum, für den Strava-Aktivitäten importiert werden sollen.
+           Dieser Zeitraum wird als Tour-Zeitraum gespeichert.</p>
+        <label>Startdatum
+          <input type="date" name="strava_start_date"
+                 value="{{ tour.start_date if tour else '' }}" required />
+        </label>
+        <label>Enddatum
+          <input type="date" name="strava_end_date"
+                 value="{{ tour.end_date if tour and tour.end_date else '' }}" required />
+        </label>
+        <button class="button">Strava-Aktivitäten importieren</button>
+      </form>
+      <form action="{{ url_for('strava_disconnect') }}" method="post">
+        <button class="button button-secondary"
+                onclick="return confirm('Strava-Konto wirklich trennen? Bestehende Aktivitäten bleiben erhalten.')">
+          Strava trennen
+        </button>
+      </form>
+    {% else %}
+      <p>Strava ist konfiguriert, aber noch nicht verbunden.</p>
+      <a href="{{ url_for('strava_connect') }}" class="button">Mit Strava verbinden</a>
+    {% endif %}
   </section>
 </div>
 {% endblock %}

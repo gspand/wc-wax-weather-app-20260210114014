@@ -1,7 +1,9 @@
 import json
+import logging
 import os
+import threading
 from datetime import datetime, timedelta, timezone
-from flask import Flask, render_template, request, redirect, url_for, flash
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from werkzeug.utils import secure_filename
 
 from config import Config
@@ -23,10 +25,15 @@ from bikepacking.services import (
 )
 from bikepacking.garmin_client import GarminClient
 from bikepacking.runtime_settings import load_runtime_settings, save_runtime_settings
+import bikepacking.strava_client as strava_client
+import bikepacking.strava_import as strava_import
 
 app = Flask(__name__)
 app.config.from_object(Config)
 app.secret_key = app.config.get("SECRET_KEY", "change-me-locally")
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 GARMIN_IMPORT_COOLDOWN_MINUTES = 45
 
@@ -268,6 +275,8 @@ def settings():
     runtime = load_runtime_settings()
     garmin = GarminClient()
     garmin_import_status = get_garmin_import_status(runtime)
+    tour = get_tour()
+    strava_tokens = strava_client._load_tokens()
     return render_template(
         "settings.html",
         garmin_username=garmin.username,
@@ -280,6 +289,10 @@ def settings():
         map_region=runtime.get("MAP_REGION", app.config.get("MAP_REGION", "AT")),
         demo_mode=app.config["DEMO_MODE"],
         garmin_import_status=garmin_import_status,
+        tour=tour,
+        strava_configured=strava_client.is_configured(),
+        strava_connected=strava_client.is_connected(),
+        strava_athlete_id=strava_tokens["athlete_id"] if strava_tokens else None,
     )
 
 
@@ -507,6 +520,169 @@ def import_colab_json():
         flash(f"Colab-Import fehlgeschlagen: {exc}", "error")
 
     return redirect(url_for("settings"))
+
+
+# ---------------------------------------------------------------------------
+# Strava OAuth routes
+# ---------------------------------------------------------------------------
+
+@app.route("/strava/connect")
+def strava_connect():
+    """Redirect the user to the Strava authorization page."""
+    if not strava_client.is_configured():
+        flash(
+            "Strava ist nicht konfiguriert. Bitte STRAVA_CLIENT_ID, "
+            "STRAVA_CLIENT_SECRET und STRAVA_CALLBACK_URL als Umgebungsvariablen setzen.",
+            "error",
+        )
+        return redirect(url_for("settings"))
+    auth_url = strava_client.get_authorization_url()
+    return redirect(auth_url)
+
+
+@app.route("/strava/callback")
+def strava_callback():
+    """Handle the OAuth callback from Strava."""
+    error = request.args.get("error")
+    if error:
+        flash(f"Strava-Anmeldung abgebrochen: {error}", "error")
+        return redirect(url_for("settings"))
+
+    code = request.args.get("code")
+    if not code:
+        flash("Strava-Anmeldung fehlgeschlagen: kein Code erhalten.", "error")
+        return redirect(url_for("settings"))
+
+    try:
+        athlete_id = strava_client.exchange_code_for_tokens(code)
+        flash(
+            f"Strava erfolgreich verbunden (Athlet-ID: {athlete_id}). "
+            "Jetzt einen Zeitraum für den ersten Import auswählen.",
+            "success",
+        )
+    except Exception as exc:
+        logger.error("Strava OAuth callback error: %s", exc)
+        flash("Strava-Verbindung fehlgeschlagen. Bitte erneut versuchen.", "error")
+    return redirect(url_for("settings"))
+
+
+@app.route("/strava/disconnect", methods=["POST"])
+def strava_disconnect():
+    """Remove stored Strava tokens (disconnect)."""
+    strava_client.delete_tokens()
+    flash("Strava-Konto getrennt. Bestehende Reisedaten bleiben erhalten.", "success")
+    return redirect(url_for("settings"))
+
+
+@app.route("/strava/import", methods=["POST"])
+def strava_import_route():
+    """Trigger the initial Strava bulk import for a tour and date range."""
+    if not strava_client.is_connected():
+        flash("Bitte zuerst Strava verbinden.", "error")
+        return redirect(url_for("settings"))
+
+    tour = get_tour()
+    if not tour:
+        flash("Keine Tour vorhanden. Bitte zuerst eine Tour anlegen.", "error")
+        return redirect(url_for("settings"))
+
+    start_date = request.form.get("strava_start_date", "").strip()
+    end_date = request.form.get("strava_end_date", "").strip()
+
+    if not start_date or not end_date:
+        flash("Bitte Start- und Enddatum für den Strava-Import angeben.", "error")
+        return redirect(url_for("settings"))
+
+    if start_date > end_date:
+        flash("Startdatum muss vor dem Enddatum liegen.", "error")
+        return redirect(url_for("settings"))
+
+    try:
+        counts = strava_import.import_strava_for_tour(
+            tour_id=tour["id"],
+            start_date_str=start_date,
+            end_date_str=end_date,
+        )
+        flash(
+            f"Strava-Import abgeschlossen: {counts['inserted']} neu, "
+            f"{counts['updated']} aktualisiert, {counts['skipped']} übersprungen"
+            + (f", {counts['errors']} Fehler" if counts["errors"] else "") + ".",
+            "success",
+        )
+    except Exception as exc:
+        logger.error("Strava import error: %s", exc)
+        flash(f"Strava-Import fehlgeschlagen: {exc}", "error")
+
+    return redirect(url_for("settings"))
+
+
+# ---------------------------------------------------------------------------
+# Strava webhook endpoint
+# ---------------------------------------------------------------------------
+
+@app.route("/strava/webhook", methods=["GET", "POST"])
+def strava_webhook():
+    """
+    GET  – Strava hub challenge verification.
+    POST – Receive activity events; respond immediately, process in background.
+    """
+    if request.method == "GET":
+        # Hub challenge verification
+        mode = request.args.get("hub.mode")
+        token = request.args.get("hub.verify_token")
+        challenge = request.args.get("hub.challenge")
+        expected = Config.STRAVA_WEBHOOK_VERIFY_TOKEN
+        if mode == "subscribe" and token == expected and challenge:
+            return jsonify({"hub.challenge": challenge})
+        logger.warning("Strava webhook GET: invalid verification request")
+        return "Forbidden", 403
+
+    # POST – event notification
+    try:
+        event = request.get_json(force=True, silent=True) or {}
+    except Exception:
+        event = {}
+
+    # Respond immediately (Strava requires < 2 s response)
+    threading.Thread(target=_process_webhook_event, args=(event,), daemon=True).start()
+    return "OK", 200
+
+
+def _process_webhook_event(event):
+    """Process a Strava webhook event in a background thread."""
+    try:
+        object_type = event.get("object_type")
+        aspect_type = event.get("aspect_type")
+        activity_id = event.get("object_id")
+        owner_id = event.get("owner_id")
+        updates = event.get("updates", {})
+
+        logger.info(
+            "Strava webhook event: object_type=%s aspect_type=%s activity=%s",
+            object_type, aspect_type, activity_id,
+        )
+
+        if object_type == "activity":
+            if aspect_type == "create":
+                strava_import.handle_webhook_create(activity_id, owner_id)
+            elif aspect_type == "update":
+                strava_import.handle_webhook_update(activity_id, owner_id, updates)
+            elif aspect_type == "delete":
+                strava_import.handle_webhook_delete(activity_id, owner_id)
+            else:
+                logger.info("Strava webhook: unknown aspect_type '%s', ignoring", aspect_type)
+
+        elif object_type == "athlete" and aspect_type == "update":
+            if updates.get("authorized") == "false":
+                strava_import.handle_webhook_deauthorize(owner_id)
+
+        else:
+            logger.info(
+                "Strava webhook: unhandled object_type='%s', ignoring", object_type
+            )
+
+    except Exception as exc:
+        logger.error("Error processing Strava webhook event: %s", exc, exc_info=True)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
