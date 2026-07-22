@@ -3,70 +3,77 @@
 <div class="page page-settings">
   <section class="section card">
     <h1>Einstellungen</h1>
-    <p>Derzeit ist ein Demo-Modus aktiv, damit die App ohne Garmin-Login funktioniert.</p>
-    <form action="{{ url_for('save_garmin_settings') }}" method="post">
-      <h2>Garmin Zugangsdaten</h2>
-      <input type="email" name="garmin_username" value="{{ garmin_username or '' }}" placeholder="Garmin E-Mail" />
-      <input type="password" name="garmin_password" placeholder="Garmin Passwort (nur für aktuelle Session)" />
-      <input type="date" name="garmin_start_date" value="{{ garmin_start_date }}" />
-      <h2>Kartenanbieter</h2>
+
+    {# ------------------------------------------------------------------ #}
+    {# Karteneinstellungen                                                  #}
+    {# ------------------------------------------------------------------ #}
+    <form action="{{ url_for('save_map_settings') }}" method="post">
+      <h2>Karteneinstellungen</h2>
       <select name="map_provider">
-        <option value="google" {% if map_provider == 'google' %}selected{% endif %}>Google Terrain</option>
         <option value="osm" {% if map_provider == 'osm' %}selected{% endif %}>OpenStreetMap</option>
+        <option value="google" {% if map_provider == 'google' %}selected{% endif %}>Google Terrain</option>
       </select>
-      <input type="text" name="google_maps_api_key" value="{{ google_maps_api_key or '' }}" placeholder="Google Maps Tiles API Key" />
+      <input type="text" name="google_maps_api_key" value="{{ google_maps_api_key or '' }}" placeholder="Google Maps Tiles API Key (optional)" />
       <input type="text" name="map_language" value="{{ map_language }}" placeholder="Sprache, z.B. de-DE" />
       <input type="text" name="map_region" value="{{ map_region }}" placeholder="Region, z.B. AT" />
-      <button class="button">Garmin-Einstellungen speichern</button>
+      <button class="button">Karteneinstellungen speichern</button>
     </form>
     <div class="settings-row">
-      <div><strong>Garmin Username</strong><br>{{ garmin_username or 'nicht gesetzt' }}</div>
-      <div><strong>Garmin Passwort</strong><br>{{ 'gesetzt' if garmin_password_set else 'nicht gesetzt' }}</div>
-      <div><strong>Garmin Token-Cache</strong><br>{{ 'vorhanden' if garmin_token_cached else 'nicht vorhanden' }}</div>
-      <div><strong>Google API Key</strong><br>{{ 'gesetzt' if google_maps_api_key else 'nicht gesetzt' }}</div>
       <div><strong>Kartenanbieter</strong><br>{{ map_provider }}</div>
+      <div><strong>Google API Key</strong><br>{{ 'gesetzt' if google_maps_api_key else 'nicht gesetzt' }}</div>
       <div><strong>Demo-Modus</strong><br>{{ 'aktiv' if demo_mode else 'deaktiv' }}</div>
-    </div>
-    <div class="settings-row">
-      <div><strong>Letzter Import-Status</strong><br>{{ garmin_import_status.last_status or 'keiner' }}</div>
-      <div><strong>Letzter Import</strong><br>{{ garmin_import_status.last_import_at or 'noch nie' }}</div>
-      <div><strong>Nächster Versuch</strong><br>{{ garmin_import_status.next_retry_at or 'sofort möglich' }}</div>
-      <div><strong>Fehler</strong><br>{{ garmin_import_status.last_error or '-' }}</div>
     </div>
     <form action="{{ url_for('import_demo') }}" method="post">
       <button class="button">Demo-Daten neu laden</button>
     </form>
-    <form action="{{ url_for('import_garmin') }}" method="post">
-      <button class="button button-secondary" {% if garmin_import_status.cooldown_active %}disabled{% endif %}>
-        {% if garmin_import_status.cooldown_active %}
-          Garmin-Limit aktiv ({{ garmin_import_status.retry_in_minutes }} Min)
-        {% else %}
-          Garmin-Daten importieren
-        {% endif %}
-      </button>
+
+    {# ------------------------------------------------------------------ #}
+    {# Garmin / Colab JSON Import                                           #}
+    {# ------------------------------------------------------------------ #}
+    <h2>Garmin / Colab JSON importieren</h2>
+    <p>Lade deine exportierte <code>bikepacking_colab_export.json</code> hoch, um deine echten Etappendaten zu importieren.</p>
+    <form action="{{ url_for('import_json') }}" method="post" enctype="multipart/form-data">
+      <input type="file" name="json_file" accept=".json" required />
+      <button class="button" type="submit">JSON importieren</button>
     </form>
-    <form action="{{ url_for('upload_garmin_tokens') }}" method="post" enctype="multipart/form-data">
-      <h2>Garmin-Token aus Colab hochladen</h2>
-      <p>Nach dem Login in Colab die letzte Zelle ausführen → <code>garmin_tokens.zip</code> herunterladen → hier hochladen. Danach funktioniert der Garmin-Import ohne Passwort.</p>
-      <input type="file" name="tokens_zip" accept=".zip" />
-      <button class="button">Tokens hochladen &amp; importieren</button>
-    </form>
-    <form action="{{ url_for('import_colab_json') }}" method="post" enctype="multipart/form-data">
-      <h2>Colab-Export importieren (JSON)</h2>
-      <p>Alternativ: JSON-Datei mit Etappendaten aus Colab hochladen.</p>
-      <input type="file" name="colab_json" accept="application/json,.json" />
-      <button class="button">Colab JSON importieren</button>
-    </form>
-    <div class="settings-row">
-      <div>
-        <strong>Colab Export-Format</strong><br>
-        Erwartet wird JSON mit <code>tour</code> + <code>stages</code> oder <code>activities</code>.
+
+    {# ------------------------------------------------------------------ #}
+    {# Strava Integration                                                   #}
+    {# ------------------------------------------------------------------ #}
+    <h2>Strava-Integration</h2>
+    {% if not strava_configured %}
+      <p>Strava ist nicht konfiguriert. Bitte folgende Umgebungsvariablen in der <code>.env</code> Datei setzen:
+        <code>STRAVA_CLIENT_ID</code>, <code>STRAVA_CLIENT_SECRET</code>,
+        <code>STRAVA_CALLBACK_URL</code>.
+      </p>
+    {% elif strava_connected %}
+      <div class="settings-row">
+        <div><strong>Strava-Status</strong><br>✅ Verbunden (Athlet-ID: {{ strava_athlete_id or 'unbekannt' }})</div>
       </div>
-      <div>
-        <strong>Trackpunkte</strong><br>
-        Nutze <code>track_points</code> als Liste in der Form <code>[[lat, lon], ...]</code>.
-      </div>
-    </div>
+      <form action="{{ url_for('strava_import_route') }}" method="post" style="margin-bottom:1rem">
+        <h3>Erstmaliger Import / Synchronisation</h3>
+        <p>Wähle den Zeitraum, für den Strava-Aktivitäten importiert werden sollen.
+           Dieser Zeitraum wird als Tour-Zeitraum gespeichert.</p>
+        <label>Startdatum
+          <input type="date" name="strava_start_date"
+                 value="{{ tour.start_date if tour else '' }}" required />
+        </label>
+        <label>Enddatum
+          <input type="date" name="strava_end_date"
+                 value="{{ tour.end_date if tour and tour.end_date else '' }}" required />
+        </label>
+        <button class="button">Strava-Aktivitäten importieren</button>
+      </form>
+      <form action="{{ url_for('strava_disconnect') }}" method="post">
+        <button class="button button-secondary"
+                onclick="return confirm('Strava-Konto wirklich trennen? Bestehende Aktivitäten bleiben erhalten.')">
+          Strava trennen
+        </button>
+      </form>
+    {% else %}
+      <p>Strava ist konfiguriert, aber noch nicht verbunden.</p>
+      <a href="{{ url_for('strava_connect') }}" class="button">Mit Strava verbinden</a>
+    {% endif %}
   </section>
 </div>
 {% endblock %}

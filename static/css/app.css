@@ -293,10 +293,236 @@ button {
   border-color: #fecaca;
 }
 
+.geocoding-card {
+  background: white;
+  border-radius: 16px;
+  padding: 20px 24px;
+  box-shadow: 0 4px 20px rgba(15, 23, 42, 0.06);
+}
+
+.geocoding-card p {
+  margin: 6px 0;
+}
+
+.geocoding-card .hint {
+  font-size: 0.82rem;
+  color: #6a7280;
+  margin-top: 8px;
+}
+
+.geocoding-card .muted {
+  color: #9ca3af;
+  font-style: italic;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  margin: 2px 3px;
+}
+
+.badge-country {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.passes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0;
+}
+
+.passes-list-card {
+  margin: 4px 0 0;
+}
+
+.pass-item {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #92400e;
+}
+
+.copy-passes-btn {
+  margin-top: 8px;
+  font-size: 0.82rem;
+  padding: 4px 12px;
+}
+
+.badge-pass {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.stage-geo {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
 @media (max-width: 920px) {
   .hero-metrics,
   .stage-overview,
   .split-columns {
     grid-template-columns: 1fr;
+  }
+}
+
+/* ── Day-type badges ────────────────────────────────────────────────────── */
+.badge-daytype {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.badge-daytype--rest_day  { background: #e0f2fe; color: #0369a1; }
+.badge-daytype--arrival   { background: #dcfce7; color: #166534; }
+.badge-daytype--departure { background: #fef9c3; color: #854d0e; }
+
+.badge-acttype {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  margin-left: 6px;
+  vertical-align: middle;
+  background: #f3f4f6;
+  color: #374151;
+}
+
+/* ── Stats grid ─────────────────────────────────────────────────────────── */
+.stats-card { border: 1px solid #e5e7eb; }
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.stat-item {
+  background: #f8fafc;
+  border-radius: 16px;
+  padding: 14px;
+  text-align: center;
+}
+
+.stat-value {
+  display: block;
+  font-size: 1.35rem;
+  font-weight: 700;
+}
+
+.stat-label {
+  display: block;
+  font-size: 0.78rem;
+  color: #6b7280;
+  margin-top: 4px;
+}
+
+/* ── Diary cards ────────────────────────────────────────────────────────── */
+.diary-card { border: 1px solid #e5e7eb; }
+
+.field-hint {
+  font-size: 0.82rem;
+  color: #6a7280;
+  margin: 4px 0 8px;
+}
+
+.field-private-note {
+  color: #9ca3af;
+  margin-top: 8px;
+}
+
+/* ── Settings grid in tageseinstellungen ────────────────────────────────── */
+.settings-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-top: 12px;
+}
+
+.settings-col label {
+  display: block;
+  font-weight: 600;
+  font-size: 0.88rem;
+  margin-top: 14px;
+  margin-bottom: 2px;
+  color: #374151;
+}
+
+.settings-col label:first-child {
+  margin-top: 0;
+}
+
+input[type="time"] {
+  width: 100%;
+  margin-top: 4px;
+  border-radius: 14px;
+  border: 1px solid #d1d5db;
+  padding: 12px 14px;
+  font-size: 1rem;
+}
+
+/* ── Stage header meta ──────────────────────────────────────────────────── */
+.stage-header-meta { display: grid; gap: 6px; }
+
+@media (max-width: 600px) {
+  .app-header {
+    padding: 12px 16px;
+  }
+
+  .app-content {
+    padding: 12px 14px;
+  }
+
+  .hero-card {
+    padding: 16px;
+    border-radius: 16px;
+  }
+
+  .stage-card {
+    padding: 14px 16px;
+  }
+
+  h1 {
+    font-size: 1.5rem;
+  }
+
+  h2 {
+    font-size: 1.15rem;
+  }
+
+  .metric-value {
+    font-size: 1.6rem;
+  }
+
+  .track-card {
+    height: 260px !important;
+  }
+
+  .nav-links {
+    gap: 10px;
+  }
+
+  .nav-links a {
+    font-size: 0.9rem;
+  }
+
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
