@@ -407,7 +407,7 @@ def strava_import_route():
             f"Strava-Import abgeschlossen: {inserted} neu, "
             f"{updated} aktualisiert, {counts['skipped']} übersprungen"
             + (f", {counts['errors']} Fehler" if counts["errors"] else "")
-            + (". Pass- und Ländererkennung läuft im Hintergrund." if inserted or updated else "") + ".",
+            + (". Pass- und Ländererkennung läuft im Hintergrund." if inserted or updated else "."),
             "success",
         )
         if inserted or updated:

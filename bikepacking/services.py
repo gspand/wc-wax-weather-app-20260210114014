@@ -533,8 +533,8 @@ def get_tour_summary():
 
     # Collect unique passes and countries across all stages
     cursor.execute("SELECT passes, countries FROM stages WHERE is_rest_day = 0")
-    all_passes: set = set()
-    all_countries: set = set()
+    all_passes: set[str] = set()
+    all_countries: set[str] = set()
     for r in cursor.fetchall():
         for col, target in ((r["passes"], all_passes), (r["countries"], all_countries)):
             if col:

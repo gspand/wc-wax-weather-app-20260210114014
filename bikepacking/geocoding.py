@@ -125,8 +125,8 @@ def detect_passes(track_points_latlon: list) -> List[str]:
     buf = 0.010
     b = f"{min_lat - buf},{min_lon - buf},{max_lat + buf},{max_lon + buf}"
 
-    # Regex matches German/Italian/French pass-related name keywords
-    _KEYWORD_RE = "Sattel|Joch|[Pp]ass|Col |Passo|Forcella|Colle|Scharte|Übergang|[Hh]ochalpenstraße|[Aa]lpenstraße"
+    # Build Overpass regex from _PASS_NAME_KEYWORDS (strip trailing spaces for clean regex)
+    _KEYWORD_RE = "|".join(kw.strip() for kw in _PASS_NAME_KEYWORDS)
 
     query = f"""
     [out:json][timeout:60];
