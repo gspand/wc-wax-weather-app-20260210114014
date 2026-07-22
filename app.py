@@ -2,7 +2,7 @@ import json
 import logging
 import os
 import threading
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory
 from werkzeug.utils import secure_filename
 
 from config import Config
@@ -381,3 +381,22 @@ def _process_webhook_event(event):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
+
+
+@app.route("/manifest.webmanifest")
+def pwa_manifest():
+    return send_from_directory(app.static_folder, "manifest.webmanifest",
+                               mimetype="application/manifest+json")
+
+
+@app.route("/service-worker.js")
+def pwa_service_worker():
+    return send_from_directory(app.static_folder, "service-worker.js",
+                               mimetype="application/javascript")
+
+
+@app.route("/icons/<path:filename>")
+def pwa_icons(filename):
+    import os
+    icons_dir = os.path.join(os.path.dirname(__file__), "icons")
+    return send_from_directory(icons_dir, filename)
