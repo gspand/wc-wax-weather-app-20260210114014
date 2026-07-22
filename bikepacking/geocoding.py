@@ -84,10 +84,31 @@ def detect_countries(track_points_latlon: list) -> List[str]:
     return countries
 
 
+_PASS_NAME_KEYWORDS = (
+    "sattel", "joch", "pass", "col ", "passo", "forcella", "colle",
+    "monte", "portam", "scharte", "übergang",
+)
+
+
+def _name_suggests_pass(name: str) -> bool:
+    """Return True if the name looks like a mountain pass / summit pass."""
+    lower = name.lower()
+    return any(kw in lower for kw in _PASS_NAME_KEYWORDS)
+
+
 def detect_passes(track_points_latlon: list) -> List[str]:
     """
     Given a list of [lat, lon] points, return a list of named mountain passes
-    crossed during the stage (OSM natural=saddle or mountain_pass=yes).
+    crossed during the stage.
+
+    OSM tags queried:
+      - natural=saddle
+      - mountain_pass=yes
+      - natural=peak with mountain_pass=yes
+
+    Additionally, any node/way whose name contains a pass-related keyword
+    (Sattel, Joch, Pass, Col, Passo, Forcella, …) is included if it is
+    close enough to the route.
 
     Uses a single Overpass query over the bounding box of the route.
     """
@@ -99,25 +120,16 @@ def detect_passes(track_points_latlon: list) -> List[str]:
     min_lat, max_lat = min(lats), max(lats)
     min_lon, max_lon = min(lons), max(lons)
 
-    # Add a small buffer (~500 m ≈ 0.005 deg)
-    buf = 0.005
-    bbox = f"{min_lat - buf},{min_lon - buf},{max_lat + buf},{max_lon + buf}"
+    # Buffer ~1 km
+    buf = 0.010
+    b = f"{min_lat - buf},{min_lon - buf},{max_lat + buf},{max_lon + buf}"
 
     query = f"""
-    [out:json][timeout:30];
+    [out:json][timeout:45];
     (
-      node["natural"="saddle"][bbox={bbox}];
-      node["mountain_pass"="yes"][bbox={bbox}];
-      node["tourism"="alpine_hut"]["name"][bbox={bbox}];
-    );
-    out body;
-    """
-    # Fix the bbox syntax for Overpass
-    query = f"""
-    [out:json][timeout:30];
-    (
-      node["natural"="saddle"]({min_lat - buf},{min_lon - buf},{max_lat + buf},{max_lon + buf});
-      node["mountain_pass"="yes"]({min_lat - buf},{min_lon - buf},{max_lat + buf},{max_lon + buf});
+      node["natural"="saddle"]({b});
+      node["mountain_pass"="yes"]({b});
+      node["natural"="peak"]["mountain_pass"="yes"]({b});
     );
     out body;
     """
@@ -127,7 +139,7 @@ def detect_passes(track_points_latlon: list) -> List[str]:
             _OVERPASS_URL,
             data=query,
             headers={"User-Agent": _USER_AGENT},
-            timeout=35,
+            timeout=50,
         )
         r.raise_for_status()
         elements = r.json().get("elements", [])
@@ -135,19 +147,56 @@ def detect_passes(track_points_latlon: list) -> List[str]:
         logger.warning("Overpass error: %s", exc)
         return []
 
-    # Filter: only include nodes that are within ~300 m of at least one track point
+    # Use every 5th track point for proximity check (good balance of speed/accuracy)
+    sample_pts = track_points_latlon[::5]
+    if track_points_latlon[-1] not in sample_pts:
+        sample_pts = list(sample_pts) + [track_points_latlon[-1]]
+
+    # Proximity threshold: ~0.008 deg ≈ 880 m
+    PROX = 0.008
+
     passes = []
     for el in elements:
-        name = el.get("tags", {}).get("name") or el.get("tags", {}).get("name:de") or ""
+        tags = el.get("tags", {})
+        name = (
+            tags.get("name")
+            or tags.get("name:de")
+            or tags.get("name:it")
+            or tags.get("name:en")
+            or ""
+        )
         if not name:
             continue
         el_lat, el_lon = el.get("lat", 0), el.get("lon", 0)
-        # Check proximity: within ~0.003 deg (~300 m) of any track point
         near = any(
-            abs(pt[0] - el_lat) < 0.003 and abs(pt[1] - el_lon) < 0.003
-            for pt in track_points_latlon
+            abs(pt[0] - el_lat) < PROX and abs(pt[1] - el_lon) < PROX
+            for pt in sample_pts
         )
         if near and name not in passes:
+            passes.append(name)
+
+    # Second pass: include any element that is near the route AND has a
+    # pass-related keyword in its name (catches "Pack Sattel", "Griffner Sattel", …)
+    for el in elements:
+        tags = el.get("tags", {})
+        name = (
+            tags.get("name")
+            or tags.get("name:de")
+            or tags.get("name:it")
+            or tags.get("name:en")
+            or ""
+        )
+        if not name or name in passes:
+            continue
+        if not _name_suggests_pass(name):
+            continue
+        el_lat, el_lon = el.get("lat", 0), el.get("lon", 0)
+        # Use a wider radius for keyword-matched names
+        near = any(
+            abs(pt[0] - el_lat) < PROX * 2 and abs(pt[1] - el_lon) < PROX * 2
+            for pt in sample_pts
+        )
+        if near:
             passes.append(name)
 
     return passes
