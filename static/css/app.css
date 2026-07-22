@@ -329,6 +329,29 @@ button {
   color: #1e40af;
 }
 
+.passes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0;
+}
+
+.passes-list-card {
+  margin: 4px 0 0;
+}
+
+.pass-item {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #92400e;
+}
+
+.copy-passes-btn {
+  margin-top: 8px;
+  font-size: 0.82rem;
+  padding: 4px 12px;
+}
+
 .badge-pass {
   background: #fef3c7;
   color: #92400e;

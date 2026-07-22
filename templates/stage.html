@@ -32,11 +32,12 @@
         </p>
         {% endif %}
         {% if geocoding.passes %}
-        <p><strong>Pässe:</strong>
+        <div class="passes-list" id="passes-list">
           {% for p in geocoding.passes %}
-            <span class="badge badge-pass">{{ p }}</span>
+            <div class="pass-item">🏔️ {{ p }}</div>
           {% endfor %}
-        </p>
+        </div>
+        <button class="button button-secondary copy-passes-btn" type="button" onclick="copyPassesList('passes-list', this)">📋 Pässe kopieren</button>
         {% endif %}
       {% else %}
         <p class="muted">Noch keine Pässe oder Länder erkannt.</p>
@@ -148,6 +149,17 @@
   }).addTo(map);
   if (layer.getLayers().length > 0) {
     map.fitBounds(layer.getBounds(), { padding: [20, 20] });
+  }
+</script>
+<script>
+  function copyPassesList(listId, btn) {
+    const items = document.querySelectorAll('#' + listId + ' .pass-item');
+    const text = Array.from(items).map(el => el.textContent.trim()).join('\n');
+    navigator.clipboard.writeText(text).then(function() {
+      const orig = btn.textContent;
+      btn.textContent = '✅ Kopiert!';
+      setTimeout(function() { btn.textContent = orig; }, 2000);
+    });
   }
 </script>
 {% endblock %}
