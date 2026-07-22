@@ -729,6 +729,12 @@ def import_from_json(json_data: dict) -> dict:
         tour_id = row["id"]
         if tour_meta.get("name"):
             cursor.execute("UPDATE tours SET name=? WHERE id=?", (tour_meta["name"], tour_id))
+        # Remove demo/manual stages and rest-day placeholders so only real data remains
+        cursor.execute(
+            "DELETE FROM stages WHERE tour_id=? AND (source IS NULL OR source IN ('manual', 'rest'))",
+            (tour_id,),
+        )
+        logger.info("import_from_json: cleared demo/manual stages for tour %s", tour_id)
     else:
         tour_name = tour_meta.get("name") or "Importierte Tour"
         start_date = tour_meta.get("start_date") or (activities[0].get("date") or activities[0].get("startTimeLocal", "")[:10] if activities else "")
