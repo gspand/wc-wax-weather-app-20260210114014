@@ -502,6 +502,14 @@ def get_stages():
     cursor.execute("SELECT * FROM stages ORDER BY date")
     stages = [_dict_from_row(row) for row in cursor.fetchall()]
     conn.close()
+    # Attach a sequential day number (1-based) across non-rest-day stages
+    day_num = 1
+    for s in stages:
+        if not s.get("is_rest_day"):
+            s["day_number"] = day_num
+            day_num += 1
+        else:
+            s["day_number"] = None
     return stages
 
 
@@ -511,6 +519,19 @@ def get_stage(stage_id):
     cursor.execute("SELECT * FROM stages WHERE id = ?", (stage_id,))
     stage = _dict_from_row(cursor.fetchone())
     conn.close()
+    if stage and not stage.get("is_rest_day"):
+        # Compute this stage's sequential day number
+        conn2 = get_connection()
+        c2 = conn2.cursor()
+        c2.execute(
+            "SELECT COUNT(*) AS cnt FROM stages WHERE date < ? AND is_rest_day = 0",
+            (stage["date"],),
+        )
+        row = c2.fetchone()
+        conn2.close()
+        stage["day_number"] = (row["cnt"] if row else 0) + 1
+    elif stage:
+        stage["day_number"] = None
     return stage
 
 
@@ -581,6 +602,35 @@ def save_stage_rating(stage_id, rating):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("UPDATE stages SET rating = ? WHERE id = ?", (rating, stage_id))
+    conn.commit()
+    conn.close()
+
+
+def save_stage_day_fields(stage_id: int, fields: dict):
+    """
+    Save all editable day fields in a single update:
+    day_title, day_type, activity_type, start_location, end_location,
+    start_time, end_time, personal_notes, public_diary_text, rating.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        UPDATE stages
+           SET day_title          = :day_title,
+               day_type           = :day_type,
+               activity_type      = :activity_type,
+               start_location     = :start_location,
+               end_location       = :end_location,
+               start_time         = :start_time,
+               end_time           = :end_time,
+               personal_notes     = :personal_notes,
+               public_diary_text  = :public_diary_text,
+               rating             = :rating
+         WHERE id = :stage_id
+        """,
+        {**fields, "stage_id": stage_id},
+    )
     conn.commit()
     conn.close()
 

@@ -103,6 +103,31 @@ def _migrate_schema(conn):
     _add_column_if_missing(cursor, "stages", "countries", "TEXT")
     _add_column_if_missing(cursor, "stages", "start_location", "TEXT")
     _add_column_if_missing(cursor, "stages", "end_location", "TEXT")
+    _add_column_if_missing(cursor, "stages", "day_title", "TEXT")
+    _add_column_if_missing(cursor, "stages", "day_type", "TEXT DEFAULT 'activity'")
+    _add_column_if_missing(cursor, "stages", "activity_type", "TEXT DEFAULT 'cycling'")
+    _add_column_if_missing(cursor, "stages", "personal_notes", "TEXT DEFAULT ''")
+    _add_column_if_missing(cursor, "stages", "public_diary_text", "TEXT DEFAULT ''")
+    _add_column_if_missing(cursor, "stages", "start_time", "TEXT")
+    _add_column_if_missing(cursor, "stages", "end_time", "TEXT")
+    _add_column_if_missing(cursor, "stages", "sort_order", "INTEGER DEFAULT 0")
+
+    # photos: extended metadata columns
+    _add_column_if_missing(cursor, "photos", "is_favorite", "INTEGER DEFAULT 0")
+    _add_column_if_missing(cursor, "photos", "is_cover_photo", "INTEGER DEFAULT 0")
+    _add_column_if_missing(cursor, "photos", "include_in_photo_book", "INTEGER DEFAULT 1")
+    _add_column_if_missing(cursor, "photos", "sort_order", "INTEGER DEFAULT 0")
+
+    # Migrate existing diary_text into public_diary_text where not yet set
+    cursor.execute(
+        """
+        UPDATE stages
+           SET public_diary_text = diary_text
+         WHERE (public_diary_text IS NULL OR public_diary_text = '')
+           AND diary_text IS NOT NULL
+           AND diary_text != ''
+        """
+    )
 
     # Unique index for idempotent Strava imports
     # Covers rows where source is a non-manual, non-empty value with an external ID

@@ -14,8 +14,6 @@ from bikepacking.services import (
     get_stages,
     get_stage,
     get_stage_photos,
-    save_stage_diary,
-    save_stage_rating,
     save_stage_photo,
     get_stage_geojson,
     get_all_stages_geojson,
@@ -23,7 +21,7 @@ from bikepacking.services import (
     save_stage_geocoding,
     get_stage_geocoding,
     get_stages_needing_geocoding,
-    save_stage_locations,
+    save_stage_day_fields,
 )
 from bikepacking.runtime_settings import load_runtime_settings, save_runtime_settings
 import bikepacking.strava_client as strava_client
@@ -157,14 +155,19 @@ def stage_detail(stage_id):
         return redirect(url_for("index"))
 
     if request.method == "POST":
-        diary_text = request.form.get("diary_text", "").strip()
-        rating = request.form.get("rating")
-        start_location = request.form.get("start_location", "").strip()
-        end_location = request.form.get("end_location", "").strip()
-        save_stage_diary(stage_id, diary_text)
-        save_stage_rating(stage_id, rating)
-        save_stage_locations(stage_id, start_location, end_location)
-        flash("Tagebuch gespeichert.", "success")
+        save_stage_day_fields(stage_id, {
+            "day_title":         request.form.get("day_title", "").strip() or None,
+            "day_type":          request.form.get("day_type", "activity"),
+            "activity_type":     request.form.get("activity_type", "cycling"),
+            "start_location":    request.form.get("start_location", "").strip() or None,
+            "end_location":      request.form.get("end_location", "").strip() or None,
+            "start_time":        request.form.get("start_time", "").strip() or None,
+            "end_time":          request.form.get("end_time", "").strip() or None,
+            "personal_notes":    request.form.get("personal_notes", "").strip(),
+            "public_diary_text": request.form.get("public_diary_text", "").strip(),
+            "rating":            request.form.get("rating") or None,
+        })
+        flash("Gespeichert.", "success")
         return redirect(url_for("stage_detail", stage_id=stage_id))
 
     photos = get_stage_photos(stage_id)

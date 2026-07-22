@@ -1,25 +1,87 @@
 {% extends 'base.html' %}
 {% block content %}
 <div class="page page-stage">
+
+  {# ── 1. Tag-Nummer + Datum ─────────────────────────────────────────────── #}
   <section class="stage-header">
-    <div>
-      <p class="eyebrow">Etappe</p>
-      <h1>{% if stage.start_location and stage.end_location %}{{ stage.start_location }} – {{ stage.end_location }}{% elif stage.start_location %}{{ stage.start_location }}{% else %}{{ stage.title }}{% endif %}</h1>
-      <p class="subtitle">{{ stage.date }} · {{ stage.distance }} km · {{ stage.elevation_gain }} hm</p>
+    <div class="stage-header-meta">
+      <p class="eyebrow">
+        {% if stage.is_rest_day %}
+          Ruhetag
+        {% else %}
+          {% if stage.day_number %}Tag {{ stage.day_number }} · {% endif %}
+          {{ stage.date }}
+        {% endif %}
+        {% if stage.day_type and stage.day_type != 'activity' %}
+          <span class="badge-daytype badge-daytype--{{ stage.day_type }}">
+            {% if stage.day_type == 'rest_day' %}🛌 Pausentag
+            {% elif stage.day_type == 'arrival' %}🚂 Anreisetag
+            {% elif stage.day_type == 'departure' %}🚂 Abreisetag
+            {% endif %}
+          </span>
+        {% endif %}
+        {% if stage.activity_type and not stage.is_rest_day %}
+          <span class="badge-acttype">
+            {% if stage.activity_type == 'cycling' %}🚴 Radfahren
+            {% elif stage.activity_type == 'hiking' %}🥾 Wandern
+            {% elif stage.activity_type == 'running' %}🏃 Laufen
+            {% elif stage.activity_type == 'ski_touring' %}⛷️ Skitour
+            {% else %}🏔️ Sonstige
+            {% endif %}
+          </span>
+        {% endif %}
+      </p>
+
+      {# ── 2. Tagestitel ─────────────────────────────────────────────────── #}
+      <h1>
+        {% if stage.day_title %}
+          {{ stage.day_title }}
+        {% elif stage.start_location and stage.end_location %}
+          {{ stage.start_location }} – {{ stage.end_location }}
+        {% elif stage.start_location %}
+          {{ stage.start_location }}
+        {% else %}
+          {{ stage.title }}
+        {% endif %}
+      </h1>
+      <p class="subtitle">{{ stage.date }}{% if not stage.is_rest_day %} · {{ stage.distance }} km · {{ stage.elevation_gain }} hm{% endif %}</p>
     </div>
+
+    {% if not stage.is_rest_day %}
     <div class="stage-overview">
       <div><strong>HR Ø</strong><span>{{ stage.average_hr or '-' }}</span></div>
       <div><strong>HR max</strong><span>{{ stage.max_hr or '-' }}</span></div>
       <div><strong>NP</strong><span>{{ stage.normalized_power or '-' }}</span></div>
       <div><strong>Load</strong><span>{{ stage.load_score or '-' }}</span></div>
     </div>
+    {% endif %}
   </section>
 
+  {# ── 3. Karte ──────────────────────────────────────────────────────────── #}
   <section class="section">
     <div class="track-card" id="map"></div>
   </section>
 
-  {# Pass- und Ländererkennung #}
+  {# ── 4. Tagesstatistik ─────────────────────────────────────────────────── #}
+  {% if not stage.is_rest_day and (stage.distance or stage.elevation_gain) %}
+  <section class="section">
+    <div class="card stats-card">
+      <h2>📊 Tagesstatistik</h2>
+      <div class="stats-grid">
+        <div class="stat-item"><span class="stat-value">{{ stage.distance or '-' }}</span><span class="stat-label">km Distanz</span></div>
+        <div class="stat-item"><span class="stat-value">{{ stage.elevation_gain or '-' }}</span><span class="stat-label">hm bergauf</span></div>
+        <div class="stat-item"><span class="stat-value">{{ (stage.moving_time//3600) }}h {{ ((stage.moving_time%3600)//60) }}m</span><span class="stat-label">Bewegungszeit</span></div>
+        {% if stage.average_speed %}<div class="stat-item"><span class="stat-value">{{ stage.average_speed }}</span><span class="stat-label">km/h Ø Tempo</span></div>{% endif %}
+        {% if stage.average_hr %}<div class="stat-item"><span class="stat-value">{{ stage.average_hr }}</span><span class="stat-label">bpm HR Ø</span></div>{% endif %}
+        {% if stage.max_hr %}<div class="stat-item"><span class="stat-value">{{ stage.max_hr }}</span><span class="stat-label">bpm HR max</span></div>{% endif %}
+        {% if stage.normalized_power %}<div class="stat-item"><span class="stat-value">{{ stage.normalized_power }}</span><span class="stat-label">W NP</span></div>{% endif %}
+        {% if stage.load_score %}<div class="stat-item"><span class="stat-value">{{ stage.load_score }}</span><span class="stat-label">Training Load</span></div>{% endif %}
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
+  {# ── 5. Pässe & Länder (KEEP!) ─────────────────────────────────────────── #}
   <section class="section">
     <div class="card geocoding-card">
       <h2>🗺 Pässe &amp; Länder</h2>
@@ -49,45 +111,104 @@
     </div>
   </section>
 
-  <section class="section split-columns">
+  {# ── 6. Fotogalerie ────────────────────────────────────────────────────── #}
+  <section class="section">
     <div class="card">
-      <h2>Tagebuch</h2>
-      <form method="post">
-        <label>Startort</label>
-        <input type="text" name="start_location" value="{{ stage.start_location or '' }}" placeholder="z.B. Innsbruck" />
-        <label>Endort</label>
-        <input type="text" name="end_location" value="{{ stage.end_location or '' }}" placeholder="z.B. Salzburg" />
-        <label>Tagebucheintrag</label>
-        <textarea name="diary_text" rows="8">{{ stage.diary_text or '' }}</textarea>
-        <label>Bewertung</label>
-        <select name="rating">
-          <option value="" {% if not stage.rating %}selected{% endif %}>Keine Bewertung</option>
-          <option value="super" {% if stage.rating=='super' %}selected{% endif %}>Super</option>
-          <option value="gut" {% if stage.rating=='gut' %}selected{% endif %}>Gut</option>
-          <option value="okay" {% if stage.rating=='okay' %}selected{% endif %}>Okay</option>
-        </select>
-        <button class="button">Speichern</button>
-      </form>
-    </div>
-
-    <div class="card">
-      <h2>Bilder</h2>
+      <h2>📷 Fotos</h2>
       <div class="photo-grid">
         {% for photo in photos %}
         <div class="photo-item">
           <img src="{{ url_for('static', filename='uploads/' ~ photo.filename) }}" alt="{{ photo.caption }}" />
-          <small>{{ photo.caption }}</small>
+          {% if photo.caption %}<small>{{ photo.caption }}</small>{% endif %}
         </div>
         {% else %}
-        <p>Keine Bilder vorhanden.</p>
+        <p class="muted">Noch keine Fotos hochgeladen.</p>
         {% endfor %}
       </div>
-      <form action="{{ url_for('upload_photo', stage_id=stage.id) }}" method="post" enctype="multipart/form-data">
+      <form action="{{ url_for('upload_photo', stage_id=stage.id) }}" method="post" enctype="multipart/form-data" style="margin-top:1rem">
         <input type="file" name="photo" accept="image/png,image/jpeg,image/webp" multiple />
         <input type="text" name="caption" placeholder="Bildbeschreibung (für alle Bilder)" />
-        <button class="button button-secondary">Hochladen</button>
+        <button class="button button-secondary">📤 Hochladen</button>
       </form>
     </div>
+  </section>
+
+  {# ── 7 + 8 + Einstellungen: kombiniertes Formular ──────────────────────── #}
+  <section class="section">
+    <form method="post" id="day-form">
+
+      {# Tagestitel bearbeiten #}
+      <div class="card" style="margin-bottom:16px">
+        <h2>✏️ Tagestitel</h2>
+        <input type="text" name="day_title" value="{{ stage.day_title or '' }}"
+               placeholder="z.B. Über den Gotthardpass" />
+        <p class="field-hint">Der Titel wird im Tagebuch und später im Fotobuch als Überschrift verwendet.</p>
+      </div>
+
+      {# 7. Meine Gedanken (personal_notes) #}
+      <div class="card diary-card" style="margin-bottom:16px">
+        <h2>💬 Meine Gedanken</h2>
+        <p class="field-hint">Was möchtest du persönlich über diesen Tag festhalten? Dieser Text erscheint standardmäßig nicht im Fotobuch.</p>
+        <textarea name="personal_notes" rows="7" placeholder="Persönliche Gedanken, Stimmung, Probleme…">{{ stage.personal_notes or '' }}</textarea>
+        <p class="field-hint field-private-note">🔒 Privat · wird nicht im Fotobuch verwendet</p>
+      </div>
+
+      {# 8. Text für das Fotobuch (public_diary_text) #}
+      <div class="card diary-card" style="margin-bottom:16px">
+        <h2>📖 Text für das Fotobuch</h2>
+        <p class="field-hint">Dieser Text wird im Reisetagebuch und später im Fotobuch verwendet.</p>
+        <textarea name="public_diary_text" rows="10" placeholder="Ausformulierter Tagesbericht für das Fotobuch…">{{ stage.public_diary_text or '' }}</textarea>
+      </div>
+
+      {# 11. Einstellungen des Tages #}
+      <div class="card" style="margin-bottom:16px">
+        <h2>⚙️ Tageseinstellungen</h2>
+        <div class="settings-grid">
+          <div class="settings-col">
+            <label>Tagesstatus</label>
+            <select name="day_type">
+              <option value="activity"  {% if stage.day_type == 'activity'  or not stage.day_type %}selected{% endif %}>🚴 Aktivitätstag</option>
+              <option value="rest_day"  {% if stage.day_type == 'rest_day'  %}selected{% endif %}>🛌 Pausentag</option>
+              <option value="arrival"   {% if stage.day_type == 'arrival'   %}selected{% endif %}>🚂 Anreisetag</option>
+              <option value="departure" {% if stage.day_type == 'departure' %}selected{% endif %}>🚂 Abreisetag</option>
+            </select>
+
+            <label>Aktivitätsart</label>
+            <select name="activity_type">
+              <option value="cycling"     {% if stage.activity_type == 'cycling'     or not stage.activity_type %}selected{% endif %}>🚴 Radfahren</option>
+              <option value="hiking"      {% if stage.activity_type == 'hiking'      %}selected{% endif %}>🥾 Wandern</option>
+              <option value="running"     {% if stage.activity_type == 'running'     %}selected{% endif %}>🏃 Laufen</option>
+              <option value="ski_touring" {% if stage.activity_type == 'ski_touring' %}selected{% endif %}>⛷️ Skitour</option>
+              <option value="other"       {% if stage.activity_type == 'other'       %}selected{% endif %}>🏔️ Sonstige</option>
+            </select>
+
+            <label>Bewertung</label>
+            <select name="rating">
+              <option value=""      {% if not stage.rating %}selected{% endif %}>— Keine Bewertung</option>
+              <option value="super" {% if stage.rating == 'super' %}selected{% endif %}>⭐⭐⭐ Super</option>
+              <option value="gut"   {% if stage.rating == 'gut'   %}selected{% endif %}>⭐⭐ Gut</option>
+              <option value="okay"  {% if stage.rating == 'okay'  %}selected{% endif %}>⭐ Okay</option>
+            </select>
+          </div>
+
+          <div class="settings-col">
+            <label>Startort</label>
+            <input type="text" name="start_location" value="{{ stage.start_location or '' }}" placeholder="z.B. Innsbruck" />
+
+            <label>Endort</label>
+            <input type="text" name="end_location" value="{{ stage.end_location or '' }}" placeholder="z.B. Salzburg" />
+
+            <label>Startzeit</label>
+            <input type="time" name="start_time" value="{{ stage.start_time or '' }}" />
+
+            <label>Endzeit</label>
+            <input type="time" name="end_time" value="{{ stage.end_time or '' }}" />
+          </div>
+        </div>
+      </div>
+
+      <button class="button" type="submit">💾 Speichern</button>
+    </form>
   </section>
 </div>
 
@@ -168,3 +289,4 @@
   }
 </script>
 {% endblock %}
+
