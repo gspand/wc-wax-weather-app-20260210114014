@@ -13,10 +13,6 @@ class Config:
     ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
     MAX_CONTENT_LENGTH = 8 * 1024 * 1024
     DEMO_MODE = os.environ.get("DEMO_MODE", "1") == "1"
-    GARMIN_USERNAME = os.environ.get("GARMIN_USERNAME", "")
-    GARMIN_PASSWORD = os.environ.get("GARMIN_PASSWORD", "")
-    GARMIN_START_DATE = os.environ.get("GARMIN_START_DATE", "2026-06-27")
-    GARMIN_CACHE_DIR = os.path.join(DATA_DIR, "tracks")
     MAP_PROVIDER = os.environ.get("MAP_PROVIDER", "google")
     GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY", "")
     MAP_LANGUAGE = os.environ.get("MAP_LANGUAGE", "de-DE")
