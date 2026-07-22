@@ -40,12 +40,12 @@ def _sample_track(track_points: list, max_samples: int = 40) -> list:
     return sampled
 
 
-def _nominatim_reverse(lat: float, lon: float) -> dict:
+def _nominatim_reverse(lat: float, lon: float, zoom: int = 5) -> dict:
     """Single Nominatim reverse-geocode call. Returns parsed JSON or {}."""
     try:
         r = requests.get(
             _NOMINATIM_URL,
-            params={"lat": lat, "lon": lon, "format": "jsonv2", "zoom": 5},
+            params={"lat": lat, "lon": lon, "format": "jsonv2", "zoom": zoom},
             headers={"User-Agent": _USER_AGENT},
             timeout=10,
         )
@@ -59,6 +59,44 @@ def _nominatim_reverse(lat: float, lon: float) -> dict:
 # --------------------------------------------------------------------------- #
 # Public API
 # --------------------------------------------------------------------------- #
+
+def detect_location_name(lat: float, lon: float) -> str:
+    """
+    Reverse geocode a single point to a human-readable city/town/village name.
+    Uses Nominatim zoom=12 for city-level resolution.
+    """
+    data = _nominatim_reverse(lat, lon, zoom=12)
+    address = data.get("address", {})
+    name = (
+        address.get("city")
+        or address.get("town")
+        or address.get("village")
+        or address.get("hamlet")
+        or address.get("municipality")
+        or address.get("county")
+        or data.get("display_name", "").split(",")[0]
+    )
+    return (name or "").strip()
+
+
+def detect_start_end_locations(track_points_latlon: list) -> dict:
+    """
+    Detect start and end location names from the first and last track points.
+    Returns {'start_location': str, 'end_location': str}.
+    Each name is a city/town/village name via Nominatim reverse geocoding.
+    """
+    if not track_points_latlon:
+        return {"start_location": "", "end_location": ""}
+
+    start_pt = track_points_latlon[0]
+    end_pt = track_points_latlon[-1]
+
+    start_name = detect_location_name(start_pt[0], start_pt[1])
+    time.sleep(1.1)  # Nominatim rate-limit: 1 req/s
+    end_name = detect_location_name(end_pt[0], end_pt[1])
+
+    return {"start_location": start_name, "end_location": end_name}
+
 
 def detect_countries(track_points_latlon: list) -> List[str]:
     """
@@ -255,6 +293,15 @@ def enrich_stage_geocoding(stage: dict) -> dict:
 
     passes = detect_passes(list(points))
     countries = detect_countries(list(points))
+    locations = detect_start_end_locations(list(points))
 
-    logger.info("  → Passes: %s | Countries: %s", passes, countries)
-    return {"countries": countries, "passes": passes}
+    logger.info(
+        "  → Passes: %s | Countries: %s | Start: %s | End: %s",
+        passes, countries, locations["start_location"], locations["end_location"],
+    )
+    return {
+        "countries": countries,
+        "passes": passes,
+        "start_location": locations["start_location"],
+        "end_location": locations["end_location"],
+    }

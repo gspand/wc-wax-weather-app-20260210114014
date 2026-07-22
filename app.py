@@ -73,10 +73,18 @@ def _geocode_pending_stages():
         stage_id = stage["id"]
         try:
             result = enrich_stage_geocoding(stage)
-            save_stage_geocoding(stage_id, result["passes"], result["countries"])
+            save_stage_geocoding(
+                stage_id,
+                result["passes"],
+                result["countries"],
+                start_location=result.get("start_location"),
+                end_location=result.get("end_location"),
+            )
             logger.info(
-                "Auto-geocoding done for stage %s '%s': passes=%s countries=%s",
-                stage_id, stage.get("title", "?"), result["passes"], result["countries"],
+                "Auto-geocoding done for stage %s '%s': passes=%s countries=%s start=%s end=%s",
+                stage_id, stage.get("title", "?"),
+                result["passes"], result["countries"],
+                result.get("start_location"), result.get("end_location"),
             )
         except Exception as exc:
             logger.error("Auto-geocoding error for stage %s: %s", stage_id, exc)
@@ -313,10 +321,17 @@ def geocode_stage(stage_id):
     def _run():
         try:
             result = enrich_stage_geocoding(stage)
-            save_stage_geocoding(stage_id, result["passes"], result["countries"])
+            save_stage_geocoding(
+                stage_id,
+                result["passes"],
+                result["countries"],
+                start_location=result.get("start_location"),
+                end_location=result.get("end_location"),
+            )
             logger.info(
-                "Geocoding done for stage %s: passes=%s countries=%s",
+                "Geocoding done for stage %s: passes=%s countries=%s start=%s end=%s",
                 stage_id, result["passes"], result["countries"],
+                result.get("start_location"), result.get("end_location"),
             )
         except Exception as exc:
             logger.error("Geocoding error for stage %s: %s", stage_id, exc)

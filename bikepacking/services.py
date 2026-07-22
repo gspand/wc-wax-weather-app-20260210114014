@@ -712,14 +712,37 @@ def save_stage_locations(stage_id: int, start_location: str, end_location: str):
     conn.close()
 
 
-def save_stage_geocoding(stage_id: int, passes: list, countries: list):
-    """Persist detected passes and countries (as JSON strings) for a stage."""
+def save_stage_geocoding(stage_id: int, passes: list, countries: list,
+                         start_location: str = None, end_location: str = None):
+    """Persist detected passes and countries (as JSON strings) for a stage.
+    Optionally also saves start_location and end_location, but only if
+    they are not already set (to preserve manually entered values).
+    """
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute(
-        "UPDATE stages SET passes = ?, countries = ? WHERE id = ?",
-        (json.dumps(passes, ensure_ascii=False), json.dumps(countries, ensure_ascii=False), stage_id),
-    )
+
+    sets = "passes = :passes, countries = :countries"
+    params: dict = {
+        "passes": json.dumps(passes, ensure_ascii=False),
+        "countries": json.dumps(countries, ensure_ascii=False),
+        "stage_id": stage_id,
+    }
+
+    if start_location:
+        sets += (
+            ", start_location = CASE WHEN (start_location IS NULL OR start_location = '')"
+            " THEN :start_location ELSE start_location END"
+        )
+        params["start_location"] = start_location
+
+    if end_location:
+        sets += (
+            ", end_location = CASE WHEN (end_location IS NULL OR end_location = '')"
+            " THEN :end_location ELSE end_location END"
+        )
+        params["end_location"] = end_location
+
+    cursor.execute(f"UPDATE stages SET {sets} WHERE id = :stage_id", params)
     conn.commit()
     conn.close()
 
@@ -743,14 +766,18 @@ def get_stage_geocoding(stage: dict) -> dict:
 
 
 def get_stages_needing_geocoding() -> list:
-    """Return stages that have a track but no geocoding results yet."""
+    """Return stages that have a track but are missing passes/countries or start/end location."""
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
         """SELECT * FROM stages
            WHERE track_geojson IS NOT NULL
              AND track_geojson != ''
-             AND (passes IS NULL OR passes = '[]' OR passes = '')
+             AND is_rest_day = 0
+             AND (
+               (passes IS NULL OR passes = '[]' OR passes = '')
+               OR (start_location IS NULL OR start_location = '')
+             )
            ORDER BY date"""
     )
     stages = [_dict_from_row(row) for row in cursor.fetchall()]
@@ -891,11 +918,20 @@ def import_from_json(json_data: dict) -> dict:
 
             garmin_id = str(activity.get("activityId") or activity.get("garmin_activity_id") or "")
 
-            # Check for duplicate
+            # Check for duplicate by garmin_activity_id
             if garmin_id:
                 cursor.execute(
                     "SELECT id FROM stages WHERE tour_id=? AND garmin_activity_id=?",
                     (tour_id, garmin_id),
+                )
+                if cursor.fetchone():
+                    counts["skipped"] += 1
+                    continue
+            else:
+                # Fallback dedup by date when no garmin_id is available
+                cursor.execute(
+                    "SELECT id FROM stages WHERE tour_id=? AND date=? AND source='garmin'",
+                    (tour_id, date),
                 )
                 if cursor.fetchone():
                     counts["skipped"] += 1
