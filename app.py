@@ -397,6 +397,5 @@ def pwa_service_worker():
 
 @app.route("/icons/<path:filename>")
 def pwa_icons(filename):
-    import os
     icons_dir = os.path.join(os.path.dirname(__file__), "icons")
     return send_from_directory(icons_dir, filename)

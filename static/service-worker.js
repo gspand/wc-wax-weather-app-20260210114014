@@ -22,14 +22,17 @@ self.addEventListener("fetch", (event) => {
     const url = new URL(event.request.url);
     if (url.origin !== self.location.origin) return;
     event.respondWith(
-        caches.match(event.request).then((cached) => {
-            const network = fetch(event.request).then((response) => {
-                if (response && response.ok) {
-                    caches.open(CACHE).then((cache) => cache.put(event.request, response.clone()));
-                }
-                return response;
+        caches.open(CACHE).then((cache) => {
+            return cache.match(event.request).then((cached) => {
+                const network = fetch(event.request).then((response) => {
+                    if (response && response.ok) {
+                        cache.put(event.request, response.clone());
+                    }
+                    return response;
+                });
+                // Stale-while-revalidate: return cached immediately, update in background
+                return cached ? (network.catch(() => {}), cached) : network;
             });
-            return cached || network;
         })
     );
 });
