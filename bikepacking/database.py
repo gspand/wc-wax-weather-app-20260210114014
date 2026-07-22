@@ -99,12 +99,13 @@ def _migrate_schema(conn):
     _add_column_if_missing(cursor, "stages", "location", "TEXT")
 
     # Unique index for idempotent Strava imports
+    # Covers rows where source is a non-manual, non-empty value with an external ID
     cursor.execute(
         """
         CREATE UNIQUE INDEX IF NOT EXISTS idx_stages_source_external
         ON stages (source, external_activity_id)
         WHERE source IS NOT NULL AND external_activity_id IS NOT NULL
-              AND source != 'manual' AND external_activity_id != ''
+              AND external_activity_id != ''
         """
     )
 

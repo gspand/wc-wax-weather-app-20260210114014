@@ -357,7 +357,8 @@ class TestOAuthRoutes:
         """GET /strava/connect should redirect to Strava auth URL."""
         resp = app_client.get("/strava/connect")
         assert resp.status_code == 302
-        assert "strava.com" in resp.headers.get("Location", "")
+        location = resp.headers.get("Location", "")
+        assert location.startswith("https://www.strava.com/oauth/authorize")
 
     def test_callback_with_error_redirects_to_settings(self, app_client):
         """Strava auth errors must redirect to settings with an error flash."""

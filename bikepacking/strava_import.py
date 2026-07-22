@@ -69,16 +69,10 @@ def _map_activity_to_stage(activity, detail, streams, tour_id, color):
     avg_hr = activity.get("average_heartrate")
     max_hr = activity.get("max_heartrate")
     avg_cadence = activity.get("average_cadence")
-    # Temperature comes from detail (weather_summary or detail field)
+    # Temperature from detail weather data
     temperature = None
     if detail:
-        temperature = (
-            detail.get("average_temp")
-            or detail.get("device_watts")
-            and None  # guard against power field misread
-        )
-        if temperature is None:
-            temperature = detail.get("average_temp")
+        temperature = detail.get("average_temp")
 
     avg_power = None
     if detail:
@@ -345,15 +339,6 @@ def _ensure_rest_day_for(tour_id, day):
 # ---------------------------------------------------------------------------
 
 def import_strava_for_tour(tour_id, start_date_str, end_date_str):
-    """
-    Fetch all bikepacking activities from Strava within [start_date, end_date]
-    and import them into the given tour.
-
-    Also updates tour.end_date and calls rebuild_rest_days.
-
-    Returns a dict with counts: inserted, updated, skipped, errors.
-    """
-    import calendar
 
     # Convert dates to Unix timestamps (beginning and end of day, UTC)
     start_dt = datetime.fromisoformat(start_date_str).replace(

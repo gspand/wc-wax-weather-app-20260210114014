@@ -473,7 +473,7 @@ def upload_garmin_tokens():
         with zipfile.ZipFile(io.BytesIO(file.read())) as zf:
             for member in zf.namelist():
                 # Only extract .json files directly into token_dir (no subdirs)
-                name = Path(member).name
+                name = secure_filename(Path(member).name)
                 if name.endswith(".json") and name:
                     data = zf.read(member)
                     (token_dir / name).write_bytes(data)
