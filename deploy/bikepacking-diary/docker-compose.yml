@@ -1,0 +1,250 @@
+# =============================================================================
+# Bikepacking Diary – Docker Compose Stack
+#
+# Vollständig isoliert von SkyBase.
+# Alle Container, Netzwerke und Volumes tragen das Präfix "bpdiary_".
+# Keine Ports werden nach außen exponiert – nur nginx spricht mit der API.
+# =============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL-Datenbank (eigene Instanz, kein Port öffentlich)
+  # ---------------------------------------------------------------------------
+  db:
+    image: postgres:16-alpine
+    container_name: bpdiary_postgres
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-bpdiary}
+      POSTGRES_USER: ${POSTGRES_USER:-bpdiary}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}   # Pflichtfeld, kein Default
+
+    volumes:
+      - bpdiary_pgdata:/var/lib/postgresql/data
+
+    networks:
+      - bpdiary_internal
+
+    # Kein externer Port – nur internes Netzwerk
+    expose:
+      - "5432"
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bpdiary} -d ${POSTGRES_DB:-bpdiary}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 512M
+        reservations:
+          memory: 128M
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ---------------------------------------------------------------------------
+  # Bikepacking Diary API (Flask / Gunicorn)
+  # ---------------------------------------------------------------------------
+  api:
+    build:
+      context: ../../          # Repository-Root (wo app.py liegt)
+      dockerfile: deploy/bikepacking-diary/Dockerfile
+
+    container_name: bpdiary_api
+    restart: unless-stopped
+
+    depends_on:
+      db:
+        condition: service_healthy
+
+    environment:
+      # Datenbank
+      DATABASE_URL: postgresql://${POSTGRES_USER:-bpdiary}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-bpdiary}
+
+      # Anwendung
+      SECRET_KEY: ${SECRET_KEY}
+      FLASK_ENV: ${FLASK_ENV:-production}
+      DEMO_MODE: ${DEMO_MODE:-false}
+
+      # Strava OAuth
+      STRAVA_CLIENT_ID: ${STRAVA_CLIENT_ID:-}
+      STRAVA_CLIENT_SECRET: ${STRAVA_CLIENT_SECRET:-}
+      STRAVA_CALLBACK_URL: ${STRAVA_CALLBACK_URL:-}
+      STRAVA_WEBHOOK_VERIFY_TOKEN: ${STRAVA_WEBHOOK_VERIFY_TOKEN:-}
+
+      # Garmin
+      GARMIN_USERNAME: ${GARMIN_USERNAME:-}
+      GARMIN_PASSWORD: ${GARMIN_PASSWORD:-}
+      GARMIN_START_DATE: ${GARMIN_START_DATE:-}
+
+      # Karte
+      MAP_PROVIDER: ${MAP_PROVIDER:-osm}
+      GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
+      MAP_LANGUAGE: ${MAP_LANGUAGE:-de-DE}
+      MAP_REGION: ${MAP_REGION:-AT}
+
+      # Datenpfade
+      UPLOAD_FOLDER: /data/photos
+      GPX_FOLDER: /data/gpx
+      PHOTOBOOK_FOLDER: /data/photobooks
+
+    volumes:
+      - bpdiary_photos:/data/photos
+      - bpdiary_gpx:/data/gpx
+      - bpdiary_photobooks:/data/photobooks
+
+    networks:
+      - bpdiary_internal
+
+    # Kein externer Port – Nginx proxied intern
+    expose:
+      - "5000"
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 512M
+        reservations:
+          memory: 128M
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  # ---------------------------------------------------------------------------
+  # Nginx – Reverse Proxy für diary-api.skybasevario.com
+  # Separater, kontrollierter Schritt – siehe README Abschnitt "Reverse Proxy"
+  # ---------------------------------------------------------------------------
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: bpdiary_nginx
+    restart: unless-stopped
+
+    depends_on:
+      api:
+        condition: service_healthy
+
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/diary-api.conf:ro
+      - bpdiary_letsencrypt:/etc/letsencrypt:ro
+
+    ports:
+      # Nur Port 8080 nach außen – der Host-Nginx (SkyBase) leitet weiter,
+      # ODER dieser Port wird direkt vom Certbot/externen LB genutzt.
+      # Erst nach manueller Prüfung der bestehenden Port-Belegung aktivieren.
+      - "127.0.0.1:8081:80"
+
+    networks:
+      - bpdiary_internal
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 64M
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ---------------------------------------------------------------------------
+  # Backup-Sidecar (tägliches Backup, läuft auf Crond-Basis)
+  # ---------------------------------------------------------------------------
+  backup:
+    image: postgres:16-alpine
+    container_name: bpdiary_backup
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-bpdiary}
+      POSTGRES_USER: ${POSTGRES_USER:-bpdiary}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_HOST: db
+
+    volumes:
+      - bpdiary_backups:/backups
+      - bpdiary_photos:/data/photos:ro
+      - bpdiary_gpx:/data/gpx:ro
+      - bpdiary_photobooks:/data/photobooks:ro
+      - ./backup/backup.sh:/backup.sh:ro
+
+    networks:
+      - bpdiary_internal
+
+    command: >
+      sh -c "
+        chmod +x /backup.sh &&
+        echo '0 2 * * * /backup.sh >> /backups/backup.log 2>&1' | crontab - &&
+        crond -f
+      "
+
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+
+# =============================================================================
+# Benannte Volumes (alle isoliert, kein Overlap mit SkyBase)
+# =============================================================================
+volumes:
+  bpdiary_pgdata:
+    name: bpdiary_pgdata
+  bpdiary_photos:
+    name: bpdiary_photos
+  bpdiary_gpx:
+    name: bpdiary_gpx
+  bpdiary_photobooks:
+    name: bpdiary_photobooks
+  bpdiary_backups:
+    name: bpdiary_backups
+  bpdiary_letsencrypt:
+    name: bpdiary_letsencrypt
+
+
+# =============================================================================
+# Netzwerk (isoliert, kein Overlap mit SkyBase)
+# =============================================================================
+networks:
+  bpdiary_internal:
+    name: bpdiary_internal
+    driver: bridge
+    internal: false    # false erlaubt ausgehende Internet-Requests (Geocoding, Strava)
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24   # Prüfen ob frei: docker network ls && docker network inspect

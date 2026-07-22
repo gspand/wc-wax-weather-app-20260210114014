@@ -508,6 +508,11 @@ def _process_webhook_event(event):
     except Exception as exc:
         logger.error("Error processing Strava webhook event: %s", exc, exc_info=True)
 
+@app.route("/health")
+def health():
+    return jsonify({"status": "ok", "service": "bikepacking-diary-api"})
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
 
