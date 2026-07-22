@@ -657,6 +657,22 @@ def get_stage_geocoding(stage: dict) -> dict:
     return {"passes": passes, "countries": countries}
 
 
+def get_stages_needing_geocoding() -> list:
+    """Return stages that have a track but no geocoding results yet."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """SELECT * FROM stages
+           WHERE track_geojson IS NOT NULL
+             AND track_geojson != ''
+             AND (passes IS NULL OR passes = '[]' OR passes = '')
+           ORDER BY date"""
+    )
+    stages = [_dict_from_row(row) for row in cursor.fetchall()]
+    conn.close()
+    return stages
+
+
 # ---------------------------------------------------------------------------
 # Colab / Garmin JSON import
 # ---------------------------------------------------------------------------

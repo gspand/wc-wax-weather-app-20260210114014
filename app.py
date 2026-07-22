@@ -22,6 +22,7 @@ from bikepacking.services import (
     import_from_json,
     save_stage_geocoding,
     get_stage_geocoding,
+    get_stages_needing_geocoding,
 )
 from bikepacking.runtime_settings import load_runtime_settings, save_runtime_settings
 import bikepacking.strava_client as strava_client
@@ -57,6 +58,41 @@ def _migrate_colors():
     conn.close()
 
 _migrate_colors()
+
+
+def _geocode_pending_stages():
+    """
+    Background task: geocode all stages that have a track but no pass/country
+    data yet. Runs sequentially with a short delay to be polite to Nominatim.
+    Safe to call multiple times – already-geocoded stages are skipped.
+    """
+    stages = get_stages_needing_geocoding()
+    if not stages:
+        return
+    logger.info("Auto-geocoding: %d stage(s) pending", len(stages))
+    for stage in stages:
+        stage_id = stage["id"]
+        try:
+            result = enrich_stage_geocoding(stage)
+            save_stage_geocoding(stage_id, result["passes"], result["countries"])
+            logger.info(
+                "Auto-geocoding done for stage %s '%s': passes=%s countries=%s",
+                stage_id, stage.get("title", "?"), result["passes"], result["countries"],
+            )
+        except Exception as exc:
+            logger.error("Auto-geocoding error for stage %s: %s", stage_id, exc)
+
+
+def _start_auto_geocoding():
+    """Spawn a daemon thread that geocodes all pending stages."""
+    t = threading.Thread(target=_geocode_pending_stages, daemon=True)
+    t.start()
+    return t
+
+
+# Geocode any stages that were already in the DB but not yet geocoded
+_start_auto_geocoding()
+
 
 def allowed_file(filename):
     return (
@@ -249,9 +285,16 @@ def import_json():
         f"Import abgeschlossen: {counts['inserted']} neue Etappen"
         + (f", {counts['skipped']} übersprungen" if counts["skipped"] else "")
         + (f", {counts['errors']} Fehler" if counts["errors"] else "")
+        + ". Pass- und Ländererkennung läuft im Hintergrund."
+        if counts["inserted"] else
+        f"Import abgeschlossen: {counts['inserted']} neue Etappen"
+        + (f", {counts['skipped']} übersprungen" if counts["skipped"] else "")
+        + (f", {counts['errors']} Fehler" if counts["errors"] else "")
         + ".",
         "success",
     )
+    if counts["inserted"]:
+        _start_auto_geocoding()
     return redirect(url_for("index"))
 
 
@@ -361,12 +404,17 @@ def strava_import_route():
             start_date_str=start_date,
             end_date_str=end_date,
         )
+        inserted = counts.get("inserted", 0)
+        updated = counts.get("updated", 0)
         flash(
-            f"Strava-Import abgeschlossen: {counts['inserted']} neu, "
-            f"{counts['updated']} aktualisiert, {counts['skipped']} übersprungen"
-            + (f", {counts['errors']} Fehler" if counts["errors"] else "") + ".",
+            f"Strava-Import abgeschlossen: {inserted} neu, "
+            f"{updated} aktualisiert, {counts['skipped']} übersprungen"
+            + (f", {counts['errors']} Fehler" if counts["errors"] else "")
+            + (". Pass- und Ländererkennung läuft im Hintergrund." if inserted or updated else "") + ".",
             "success",
         )
+        if inserted or updated:
+            _start_auto_geocoding()
     except Exception as exc:
         logger.error("Strava import error: %s", exc)
         flash(f"Strava-Import fehlgeschlagen: {exc}", "error")
@@ -420,8 +468,10 @@ def _process_webhook_event(event):
         if object_type == "activity":
             if aspect_type == "create":
                 strava_import.handle_webhook_create(activity_id, owner_id)
+                _geocode_pending_stages()
             elif aspect_type == "update":
                 strava_import.handle_webhook_update(activity_id, owner_id, updates)
+                _geocode_pending_stages()
             elif aspect_type == "delete":
                 strava_import.handle_webhook_delete(activity_id, owner_id)
             else:
